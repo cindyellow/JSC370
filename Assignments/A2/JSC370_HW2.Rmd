@@ -4,8 +4,13 @@ author: "Shih-Ting (Cindy) Huang"
 date: "2/19/2022"
 output: html_document
 ---
+```{r setup, message=FALSE, echo=FALSE, warning=FALSE}
+library(data.table)
+library(tidyverse)
+library(dplyr)
+```
 
-```{r}
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
 download.file(
   "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/homework/hw2/chs_individual.csv",
   destfile = "chs_individual.csv",
@@ -23,6 +28,139 @@ download.file(
 chs_ind <- data.table::fread("chs_individual.csv")
 chs_reg <- data.table::fread("chs_regional_geo.csv")
 chs <- merge(x=chs_ind, y = chs_reg, 
-             all.x = T, all.y = T, by.x="USAFID", by.y = "USAF")
+             all.x = T, all.y = T, by.x="townname", by.y = "townname")
 ```
+
+```{r}
+dim(chs_ind)
+dim(chs_reg)
+dim(chs)
+```
+
+
+
+```{r}
+# Impute data
+colnames <- names(chs)
+
+getmode <- function(v) {
+ uniqv <- unique(v)
+ uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+for(i in 1:ncol(chs)){
+  if (length(unique(chs[,..i])) == 2){
+    avg_val <- getmode(chs[chs$male == 1 & chs$hispanic == 1, ..i])
+  }else{
+    avg_val <- mean(chs[chs$male==1 & chs$hispanic == 1, ..i])
+  }
+  chs[is.na(chs[,..i]), ]
+  # chs[, ..i  := fifelse(is.na(chs[,..i]), avg_val, chs[,..i])]
+}
+```
+
+```{r}
+avg <- getmode(chs[chs$male==1 & chs$hispanic == 1])
+chs[, hayfever  := fifelse(is.na(chs[,hayfever]), as.numeric(avg), hayfever)]
+
+```
+
+```{r}
+avg
+```
+
+```{r}
+chs[, obesity_level := fifelse(bmi < 14, "underweight", fifelse(bmi <=22, "normal", fifelse(bmi<=24, "overweight", "obese")))]
+```
+
+```{r}
+tab <- chs[, .(
+  num_observations = .N,
+  min_bmi = min(bmi),
+  max_bmi = max(bmi)
+), by = obesity_level]
+
+knitr::kable(tab, caption = "A summary of data by obesity category")
+```
+
+
+```{r}
+chs[, smoke_gas_exposure := fifelse(smoke == 1, fifelse(gasstove == 1, "Both", "Second-hand Smoke"),fifelse(gasstove==1, "Gas", "Neither"))]
+```
+
+
+```{r}
+tab <- chs[, .(
+  "Average Forced Expiratory Volume" = mean(fev),
+  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
+  "Asthma Proportion" = sum(asthma)/.N,
+  "Asthma Standard Deviation" = sd(asthma)
+), by = townname]
+
+knitr::kable(tab, caption = "A summary of data by town category")
+```
+
+
+```{r}
+tab <- chs[, .("Sex" = fifelse(male==1, "Male", "Female"),
+  "Average Forced Expiratory Volume" = mean(fev),
+  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
+  "Asthma Proportion" = sum(asthma)/.N,
+  "Asthma Standard Deviation" = sd(asthma)
+), by = male]
+
+knitr::kable(tab, caption = "A summary of data by town category")
+
+```
+```{r}
+tab <- chs[, .(
+  "Average Forced Expiratory Volume" = mean(fev),
+  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
+  "Asthma Proportion" = sum(asthma)/.N,
+  "Asthma Standard Deviation" = sd(asthma)
+), by = obesity_level]
+
+knitr::kable(tab, caption = "A summary of data by obesity category")
+```
+
+```{r}
+tab <- chs[, .(
+  "Average Forced Expiratory Volume" = mean(fev),
+  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
+  "Asthma Proportion" = sum(asthma)/.N,
+  "Asthma Standard Deviation" = sd(asthma)
+), by = smoke_gas_exposure]
+
+knitr::kable(tab, caption = "A summary of data by smoke-gas category")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
