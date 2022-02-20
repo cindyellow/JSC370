@@ -1,0 +1,299 @@
+---
+title: "Lab 05 - Data Wrangling"
+output:
+  html_document:
+    html_preview: false
+link-citations: yes
+---
+
+# Learning goals
+
+-   Use the `merge()` function to join two datasets.
+-   Deal with missings and impute data.
+-   Identify relevant observations using `quantile()`.
+-   Practice your GitHub skills.
+
+# Lab description
+
+For this lab we will be dealing with the meteorological dataset `met`. In this case, we will use `data.table` to answer some questions regarding the `met` dataset, while at the same time practice your Git+GitHub skills for this project.
+
+This markdown document should be rendered using `github_document` document.
+
+# Part 1: Setup a Git project and the GitHub repository
+
+1.  Go to wherever you are planning to store the data on your computer, and create a folder for this project, for example, "JSC370-labs"
+
+2.  In that folder, save [this lab template](https://github.com/JSC370/jsc370-2022/blob/main/labs/lab05/lab05-wrangling-gam.Rmd) as "README.Rmd". This will be the markdown file where all the magic will happen.
+
+3.  Go to your GitHub account and create a new repository of the same name that your local folder has, e.g., "JSC370-labs".
+
+4.  Initialize the Git project, add the "README.Rmd" file, and make your first commit.
+
+5.  Add the repo you just created on GitHub.com to the list of remotes, and push your commit to origin while setting the upstream.
+
+Most of the steps can be done using command line:
+
+``` {.sh}
+# Step 1
+cd ~/Documents
+mkdir JSC370-labs
+cd JSC370-labs
+
+# Step 2
+wget https://github.com/JSC370/jsc370-2022/blob/main/labs/lab05/lab05-wrangling-gam.Rmd
+mv lab05-wrangling-gam.Rmd README.md
+
+# Step 3
+# Happens on github
+
+# Step 4
+git init
+git add README.Rmd
+git commit -m "First commit"
+
+# Step 5
+git remote add origin git@github.com:[username]/JSC370-labs
+git push -u origin master
+```
+
+You can also complete the steps in R (replace with your paths/username when needed)
+
+``` {.r}
+# Step 1
+setwd("~/Documents")
+dir.create("JSC370-labs")
+setwd("JSC370-labs")
+
+# Step 2
+download.file(
+  "https://github.com/JSC370/jsc370-2022/blob/main/labs/lab05/lab05-wrangling-gam.Rmd",
+  destfile = "README.Rmd"
+  )
+
+# Step 3: Happens on Github
+
+# Step 4
+system("git init && git add README.Rmd")
+system('git commit -m "First commit"')
+
+# Step 5
+system("git remote add origin git@github.com:[username]/JSC370-labs")
+system("git push -u origin master")
+```
+
+Once you are done setting up the project, you can now start working with the MET data.
+
+## Setup in R
+
+1.  Load the `data.table` (and the `dtplyr` and `dplyr` packages if you plan to work with those).
+
+2.  Load the met data from <https://github.com/JSC370/jsc370-2022/blob/main/labs/lab03/met_all.gz>, and also the station data. For the latter, you can use the code we used during lecture to pre-process the stations data:
+
+```{r stations-data, eval = TRUE}
+library(data.table)
+# Download the data
+stations <- fread("ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-history.csv")
+stations[, USAF := as.integer(USAF)]
+
+# Dealing with NAs and 999999
+stations[, USAF   := fifelse(USAF == 999999, NA_integer_, USAF)]
+stations[, CTRY   := fifelse(CTRY == "", NA_character_, CTRY)]
+stations[, STATE  := fifelse(STATE == "", NA_character_, STATE)]
+
+# Selecting the three relevant columns, and keeping unique records
+stations <- unique(stations[, list(USAF, CTRY, STATE)])
+
+# Dropping NAs
+stations <- stations[!is.na(USAF)]
+
+# Removing duplicates
+stations[, n := 1:.N, by = .(USAF)]
+stations <- stations[n == 1,][, n := NULL]
+```
+
+
+3.  Merge the data as we did during the lecture.
+
+## Question 1: Representative station for the US
+
+Across all weather stations, what is the median station in terms of temperature, wind speed, and atmospheric pressure? Look for the three weather stations that best represent continental US using the `quantile()` function. Do these three coincide?
+
+```{r}
+download.file(
+  "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/labs/lab03/met_all.gz",
+  destfile = "met_all.gz",
+  method   = "curl",
+  timeout  = 60
+  )
+
+met <- data.table::fread("met_all.gz")
+met <- merge(x=met, y = stations, 
+             all.x = T, all.y = F, by.x="USAFID", by.y = "USAF")
+```
+
+```{r}
+station_ave <- met[, .(temp = mean(temp, na.rm = T), 
+                       wind.sp = mean(wind.sp, na.rm = T),
+                       atm.press = mean(atm.press, na.rm = T)),
+                   by = .(USAFID, STATE)]
+```
+
+```{r}
+medians <- station_ave[, .(temp_50 = quantile(temp, probs = .5, na.rm = T),
+                           wind.sp_50 = quantile(wind.sp, probs = .5, na.rm = T),
+                           atm.press_50 = quantile(atm.press, na.rm = T))]
+```
+
+```{r}
+# Median temp station 
+station_ave[, temp_dist := abs(temp - medians$temp_50)]
+median_temp_station <- station_ave[order(temp_dist)][1]
+
+# Median wind.sp
+station_ave[, windsp_dist := abs(wind.sp - medians$wind.sp_50)]
+median_windsp_station <- station_ave[order(windsp_dist)][1]
+
+# Median atm.press
+station_ave[, atm_dist := abs(atm.press - medians$atm.press_50)]
+median_atm_station <- station_ave[order(atm_dist)][1]
+```
+
+- No, the three stations are different. In terms of temperature, the station is located in Kentucky, whereas the one for median windspeed is in , and the one for atmosphere pressure is in Georgia.
+
+Knit the document, commit your changes, and save it on GitHub. Don't forget to add `README.md` to the tree, the first time you render it.
+
+## Question 2: Representative station per state
+
+Just like the previous question, you are asked to identify what is the most representative, the median, station per state. This time, instead of looking at one variable at a time, look at the euclidean distance. If multiple stations show in the median, select the one located at the lowest latitude.
+
+```{r}
+med <- station_ave[, .(temp_50 = quantile(temp, probs = .5, na.rm = T),
+                           wind.sp_50 = quantile(wind.sp, probs = .5, na.rm = T),
+                           atm.press_50 = quantile(atm.press, na.rm = T)),
+                       by = STATE]
+
+med_eu <- merge(x=met, y=med, by="STATE")
+
+med_eu[, temp_eudist := sqrt((temp - medians$temp_50)^2 + (wind.sp - medians$wind.sp_50)^2 + (atm.press - medians$atm.press_50)^2)]
+
+eu_station <- med_eu[, .SD[which.min(temp_eudist)], by=STATE]
+```
+
+
+Knit the doc and save it on GitHub.
+
+## Question 3: In the middle?
+
+For each state, identify what is the station that is closest to the mid-point of the state. Combining these with the stations you identified in the previous question, use `leaflet()` to visualize all \~100 points in the same figure, applying different colors for those identified in this question.
+
+```{r}
+mid_point <- met[, .(lon_50 = quantile(lon, probs=.5, na.rm=T),
+                     lat_50 = quantile(lat, probs=.5, na.rm=T)),
+                 by = STATE]
+
+mid <- merge(x=met, y=mid_point, by="STATE")
+
+# Find euclidean distance
+mid[, mid_eudist := sqrt((lon - lon_50)^2 + (lat - lat_50)^2)]
+mid_station <- mid[, .SD[which.min(mid_eudist)], by=STATE]
+
+library(leaflet)
+library(dplyr)
+leaflet() %>%
+  addProviderTiles('CartoDB.Positron') %>%
+  addCircles(data = mid_station,
+             lat =~ lat, lng =~lon, popup="mid station",
+             opacity = 1, fillOpacity = 1, radius = 400, color = "Blue") %>%
+  addCircles(data = eu_station,
+             lat =~ lat, lng =~lon, popup="median station",
+             opacity = 1, fillOpacity = 1, radius = 400, color = "Orange")
+```
+
+Knit the doc and save it on GitHub.
+
+## Question 4: Means of means
+
+Using the `quantile()` function, generate a summary table that shows the number of states included, average temperature, wind-speed, and atmospheric pressure by the variable "average temperature level," which you'll need to create.
+
+Start by computing the states' average temperature. Use that measurement to classify them according to the following criteria:
+
+-   low: temp \< 20
+-   Mid: temp \>= 20 and temp \< 25
+-   High: temp \>= 25
+
+```{r}
+met[, state_temperature := mean(temp, na.rm=T), by=STATE]
+
+met[, temp_cat := fifelse(state_temperature < 20, "low-temp", fifelse(state_temperature <25, "mid-temp", "high-temp"))]
+```
+
+Once you are done with that, you can compute the following:
+
+-   Number of entries (records),
+-   Number of NA entries,
+-   Number of stations,
+-   Number of states included, and
+-   Mean temperature, wind-speed, and atmospheric pressure.
+
+For each of the temperature levels described before.
+
+```{r}
+table(met$temp_cat, useNA = "always")
+
+tab <- met[, .(
+  N_entries = .N,
+  N_entries_na = sum(is.na(temp_cat)),
+  N_stations = length(unique(USAFID)),
+  N_states = length(unique(STATE)),
+  mean_temp = mean(temp, na.rm = T),
+  mean_wind.sp = mean(wind.sp, na.rm=T),
+  mean_atm.press = mean(atm.press, na.rm = T)
+), by = temp_cat]
+
+knitr::kable(tab, caption = "A summary of data by temperature category")
+```
+
+Knit the document, commit your changes, and push them to GitHub.
+
+## Question 5: Advanced Regression
+
+Let's practice running regression models with smooth functions on X. We need the `mgcv()` package and `gam()` function to do this.
+
+-   using your data with the median values per station, examine the association between median temperature (y) and median wind speed (x). Create a scatterplot of the two variables using ggplot2. Add both a linear regression line and a smooth line.
+
+-   fit both a linear model and a spline model (use `gam()` with a cubic regression spline on wind speed). Summarize and plot the results from the models and interpret which model is the best fit and why.
+
+```{r}
+library(ggplot2)
+
+station_ave[, temp_50 := quantile(temp, probs = .5, na.rm=T), by=STATE]
+station_ave[, wind.sp_50 := quantile(wind.sp, probs=.5, na.rm=TRUE), by=STATE]
+
+ggplot(station_ave, aes(x=wind.sp_50, y = temp_50)) + 
+  geom_point()+
+  geom_smooth(method="lm") +
+  geom_smooth(method="gam", col=2)
+
+library(mgcv)
+
+lm_mod <- lm(temp_50 ~ wind.sp_50, data=station_ave)
+summary(lm_mod)
+plot(lm_mod)
+```
+
+```{r}
+gam_mod <- gam(temp_50 ~ s(wind.sp_50, bs="cr", k=20), data=station_ave)
+summary(gam_mod)
+plot(gam_mod)
+```
+In terms of adjusted R squared, the spline model with 20 knots is better with a value of 0.67 compared to 0.017 for the linear model. If we don't consider the possibility of overfitting and simply look at its performance on the current dataset, the spline model has better fit for the increased variation in data that it explains. Regardless of overfitting, spline is more suitable as it can pick up the non-linear patterns in the dataset visible in the first plot.
+
+# Delivarables
+
+-   Answer questions 1-5
+
+-   Paste the link to the github repo you created here
+
+https://github.com/cindyellow/JSC370-labs/tree/master
+
+-   Submit pdf or html output to Quercus

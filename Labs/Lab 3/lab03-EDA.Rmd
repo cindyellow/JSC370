@@ -1,0 +1,224 @@
+---
+title: "Lab 03 - Exploratory Data Analysis"
+output:
+  html_document:
+    html_preview: false
+link-citations: yes
+---
+
+
+
+```{r setup, message=FALSE, echo=FALSE, warning=FALSE}
+#install.packages(c("data.table","leaflet", "rdrop2"))
+library(data.table)
+library(leaflet)
+library(tidyverse)
+library(rdrop2)
+```
+
+# Learning Goals
+
+- Read in and get familiar with the meteorology dataset  
+- Step through the EDA "checklist" presented in the class slides
+- Practice making exploratory graphs
+
+
+# Lab Description
+
+We will work with the meteorological data presented in lecture. Recall the dataset consists of weather station readings in the continental US. 
+
+**The objective of the lab is to find the weather station with the highest elevation and look at patterns in the time series of its wind speed and temperature.**
+
+# Steps
+
+### 1. Read in the data
+
+First download and then read in with data.table:fread()
+
+```{r checking-file, include=FALSE}
+fn <- "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/labs/lab03/met_all.gz"
+if (!file.exists("met_all.gz"))
+  download.file(fn, destfile = "met_all.gz")
+met <- data.table::fread("met_all.gz")
+```
+
+
+```{r, echo=TRUE, message=FALSE, eval=FALSE}
+download.file(
+  "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/labs/lab03/met_all.gz",
+  destfile = "met_all.gz",
+  method   = "curl",
+  timeout  = 60
+  )
+
+met <- data.table::fread("met_all.gz")
+```
+
+### 2. Check the dimensions, headers, footers. How many columns, rows are there?
+
+```{r}
+dim(met)
+head(met)
+tail(met)
+```
+There are 2,377,343 rows and 30 columns in the met dataset.
+
+### 3. Take a look at the variables.
+
+```{r}
+str(met)
+```
+
+
+### 4. Take a closer look at the key variables. 
+
+```{r}
+table(met$year)
+table(met$day)
+table(met$hour)
+summary(met$temp)
+summary(met$elev)
+summary(met$wind.sp)
+```
+
+It looks like the elevation variable has observations with 9999.0, which is probably an indicator for missing. We should take a deeper look at the data dictionary to confirm. The wind speed variable is ok but there are a lot of missing data.
+
+After checking the data we should make the appropriate modifications. Replace elevations with 9999 as `NA`.
+
+```{r}
+# Base R way; changes met directly
+# met[met$elev==9999.0] <- NA
+# summary(met$elev)
+
+# Tidyverse way; have to assign it somewhere bc it doesn't modify original dataset
+met %>% mutate(elev = na_if(elev,9999)) -> met
+```
+At what elevation is the highest weather station?
+
+- The highest weather station is at 4113m.
+
+
+Now let's look at the data from this site
+```{r}
+elev <- met[elev == max(elev, na.rm = T)]
+summary(elev)
+```
+
+- The minimum for visible distance is fairly far away from its mean, which could be unusual. 
+
+### 5. Check the data against an external data source.
+
+We should check the suspicious temperature value (where is it located?) and validate that the range of elevations make sense (-13 m to 4113 m).
+
+Google is your friend here.
+
+Fix any problems that arise in your checks.
+
+- The range of elevation makes sense since elevation in the continguous US can range from -86m to 4,418m. Checking some of the extreme temperature observations, it still makes sense because those occurred in hot regions, such as deserts. However, we removed temperature below -15 degrees celsius as those are rare cases and appear to be outliers, which can affect our ability to generalize.
+
+```{r}
+summary(met)
+hist(met$temp)
+hist(met$elev)
+
+extr_temp <- met %>%
+  subset(temp > 50)
+head(extr_temp)
+
+met <- met[temp>-15]
+met2 <- met[order(temp)]
+head(met2)
+
+# tidyverse way
+# met %>%
+#   subset(temp > -15) %>%
+#   arrange(temp)
+```
+
+
+### 6. Calculate summary statistics
+
+Remember to keep the initial question in mind. We want to pick out the weather station with maximum elevation and examine its windspeed and temperature.
+
+Some ideas: select the weather station with maximum elevation; look at the correlation between temperature and wind speed; look at the correlation between temperature and wind speed with hour and day of the month.
+
+```{r}
+# Subset again
+elev <- met[elev==max(elev, na.rm = T)]
+summary(elev)
+```
+
+```{r}
+cor(elev$temp, elev$wind.sp, use="complete")
+cor(elev$temp, elev$hour, use="complete")
+cor(elev$wind.sp, elev$day, use="complete")
+cor(elev$wind.sp, elev$hour, use="complete")
+cor(elev$temp, elev$day, use="complete")
+
+met %>%
+  subset(elev==max(elev, na.rm = T)) %>%
+  select(temp, wind.sp, hour, day) %>%
+  GGally::ggpairs()
+```
+
+- Here, we see that at the highest weather station, there's not much correlation between windspeed and temperature with the value -0.09. However, there's more significant correlation between hour & temperature and day & windspeed.
+
+### 7. Exploratory graphs
+
+
+We should look at the distributions of all of the key variables (elevation, temp, wind speed) to make sure there are no remaining issues with the data.
+
+```{r }
+hist(met$elev, breaks=100)
+hist(met$temp)
+hist(log(met$wind.sp))
+```
+
+One thing we should consider for later analyses is to log transform wind speed and elevation as the are very skewed.
+
+Look at where the weather station with highest elevation is located (i.e. make a map!)
+
+```{r}
+met %>%
+  subset(elev == max(elev, na.rm=T)) %>%
+  leaflet() %>%
+  addProviderTiles('OpenStreetMap') %>%
+  addCircles(lat=~lat, lng=~lon, opacity=1, fillOpacity=1, radius=100)
+# met_stations <- unique(met[,c('lat', 'lon')])
+# met_stations %>%
+#   leaflet() %>%
+#   addProviderTiles('OpenStreetMap') %>%
+#   addCircles(lat=~lat, lng=~lon, opacity=1, fillOpacity=1, radius=100)
+```
+
+- From the map, we see that the weather station with the maximum elevation is located in Rocky Mountains area in Colorado.
+
+Look at the time series of temperature and wind speed at this location. For this we will need to create a date-time variable for the x-axis.
+
+```{r message=FALSE}
+library(lubridate)
+
+#elev holds highest elevation
+elev$date <- with(elev, ymd_h(paste(year, month, day, hour, sep = ' ')))
+summary(elev$date)
+elev <- elev[order(date)]
+head(elev)
+
+# tidyverse vers
+# elev %>%
+#   mutate(date = ymd_h(year, month, day, hour, sep = ' '))
+```
+
+With the date-time variable we can plot the time series of temperature and wind speed.
+
+```{r}
+plot(elev$date, elev$temp, type='l')
+plot(elev$date, elev$wind.sp, type='l')
+```
+
+There doesn't seem to be any significant trends present in these time series plots. However, oscillations throughout time do reflect their correlation values. We see that temperature does vary with hour whereas windspeed patterns change with day.
+
+
+# Deliverables
+
+Submit your completed lab to quercus as a html or pdf document. Fill in questions in steps 4,5,6,7

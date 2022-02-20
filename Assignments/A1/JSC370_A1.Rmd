@@ -1,0 +1,203 @@
+---
+title: "JSC370: Assignment 1"
+subtitle: "Exploring daily temperature change in Fort Ross, Nunavut overtime"
+author: "Shih-Ting (Cindy) Huang"
+date: "2/3/2022"
+output:   
+  html_document:
+    theme: spacelab
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(tidyverse)
+library(leaflet)
+```
+
+## 1. Importing and Checking the Data
+
+After importing the two datasets on daily temperature in Fort Ross, Nunavut during 1939 and 2021, we proceed to check for import issues.
+
+```{r, include=FALSE}
+fn <- "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/homework/hw1/climate_daily_NU_2402050_1939.csv"
+if (!file.exists("climate_daily_NU_2402050_1939.csv"))
+  download.file(fn, destfile = "climate_daily_NU_2402050_1939.csv")
+old <- data.table::fread("climate_daily_NU_2402050_1939.csv")
+
+fn <- "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/homework/hw1/climate_daily_NU_2402051_2021.csv"
+if (!file.exists("climate_daily_NU_2402051_2021.csv"))
+  download.file(fn, destfile = "climate_daily_NU_2402051_2021.csv")
+new <- data.table::fread("climate_daily_NU_2402051_2021.csv")
+```
+
+
+```{r, include=FALSE}
+dim(old)
+dim(new)
+
+head(old)
+tail(old)
+head(new)
+tail(new)
+```
+
+```{r, include=FALSE}
+summary(old)
+summary(new)
+
+str(old)
+str(new)
+```
+
+Both datasets have 365 rows and 31 columns, out of which there are 8 boolean, 7 string, 1 date, and 14 numerical variables. Values in their headers and footers appear to be reasonable as well. With respect to temperature, the values seem appropriate given the weather station is in the Canadian arctic. However, there are quite a few variables with a lot of missing values, represented by NA. The following details the proportion of NA values in columns that have them for the 1939 dataset:
+
+```{r, echo=FALSE, fig.cap="The proportion of NA values for each variable in 1939 dataset."}
+NA_old <- apply(old, 2, function(col)sum(is.na(col))/length(col))
+NA_old[which(NA_old != 0)]
+```
+
+and the 2021 dataset:
+```{r, echo=FALSE, fig.cap="The proportion of NA values for each variable in 2021 dataset."}
+NA_new <- apply(new, 2, function(col)sum(is.na(col))/length(col))
+NA_new[which(NA_new != 0)]
+```
+
+In order to merge the two years' data, we will not include variables with 100% NA values in our investigation as they do not add any information. We won't remove any rows with NA values but will exclude them when calculating summary statistics like mean, median, etc.
+
+## 2. Data Cleaning
+First, we exclude the following variables because they have 100% NA values in one of the two datasets:
+
+* "Data Quality", "Max Temp Flag", "Total Rain Flag", "Snow on Grnd (cm)", "Snow on Grnd Flag", "Dir of Max Gust (10s deg)", "Dir of Max Gust Flag", "Spd of Max Gust (km/h)", "Spd of Max Gust Flag", "Total Rain (mm)", "Total Snow (cm)", "Total Snow Flag"
+
+We also rename columns with special characters, such as "Mean Temp (Â°C)", to more easily access and refer to those variables.
+```{r, include=FALSE}
+# Select columns and rename remaining ones with strange characters
+old1 <- old %>%
+  rename(max_temp = 10, min_temp = 12, mean_temp = 14, heat_deg_days = 16, cool_deg_days = 18) %>%
+  select(-c("Data Quality", "Max Temp Flag", "Total Rain Flag", "Snow on Grnd (cm)", "Snow on Grnd Flag", "Dir of Max Gust (10s deg)", "Dir of Max Gust Flag", "Spd of Max Gust (km/h)", "Spd of Max Gust Flag", "Total Rain (mm)", "Total Snow (cm)", "Total Snow Flag")) 
+head(old1)
+```
+
+```{r, include=FALSE}
+new1 <- new %>%
+  rename(max_temp = 10, min_temp = 12, mean_temp = 14, heat_deg_days = 16, cool_deg_days = 18) %>%
+  select(-c("Data Quality", "Max Temp Flag", "Total Rain Flag", "Snow on Grnd (cm)", "Snow on Grnd Flag", "Dir of Max Gust (10s deg)", "Dir of Max Gust Flag", "Spd of Max Gust (km/h)", "Spd of Max Gust Flag", "Total Rain (mm)", "Total Snow (cm)", "Total Snow Flag"))
+head(new1)
+```
+Checking that both datasets are cleaned, we merge them with full join to preserve all the NA values for individual observations. In the merged dataset, we  have 730 observations and 19 columns. 
+```{r, include=FALSE}
+merged <- full_join(old1,new1)
+dim(merged)
+head(merged)
+```
+
+## 3. Exploratory Data Analysis
+
+To investigate whether daily temperature in Fort Ross, Nunavut has significantly changed from 1939 to 2021, we first look at some statistics for each year, specifically those related to temperature.
+
+This summarizes some key values for 1939:
+
+```{r, echo=FALSE}
+merged %>%
+  filter(Year == 1939) %>%
+  summarise("Max Temp Mean" = mean(max_temp, na.rm=T), "Max Temp Median" = median(max_temp, na.rm=T), "Max Temp Variance" = var(max_temp, na.rm=T), "Min Temp Mean" = mean(min_temp, na.rm=T),  "Min Temp Median" = median(min_temp, na.rm=T), "Min Temp Variance" = var(min_temp, na.rm=T), "Avg Temp Mean" = mean(mean_temp, na.rm=T),  "Avg Temp Median" = median(mean_temp, na.rm=T), "Avg Temp Variance" = var(mean_temp, na.rm=T))
+```
+
+This summarizes some key values for 2021:
+
+```{r, echo=FALSE}
+merged %>%
+  filter(Year == 2021) %>%
+  summarise("Max Temp Mean" = mean(max_temp, na.rm=T), "Max Temp Median" = median(max_temp, na.rm=T), "Max Temp Variance" = var(max_temp, na.rm=T), "Min Temp Mean" = mean(min_temp, na.rm=T),  "Min Temp Median" = median(min_temp, na.rm=T), "Min Temp Variance" = var(min_temp, na.rm=T), "Avg Temp Mean" = mean(mean_temp, na.rm=T),  "Avg Temp Median" = median(mean_temp, na.rm=T), "Avg Temp Variance" = var(mean_temp, na.rm=T))
+```
+
+Comparing the two years' statistics on temperature, we see that the mean and median for maximum, minimum, and average temperature have increased from 1939 to 2021 with less variance in all three variables. Using this insight, we then want to formally test if there's a relationship between year and these temperature measurements.
+
+First, we consider linear regression, for which we have to verify assumptions such as population normality. Daily mean temperature was chosen for studying if there's temperature change overtime. 
+
+```{r, echo=FALSE}
+mod <- lm(mean_temp ~ Year, data=merged, na.action=na.omit)
+summary(mod)
+
+r <- resid(mod)
+
+qqnorm(r)
+qqline(r)
+```
+
+It seems like the response variable is not normally distributed with each level of Year, so we are unable to rely on the conclusions from linear regression without further adjustments to the model. Hence for now, we will investigate the question of interest using the Mann Whitney U test, a non-parametric paired T-test, instead.
+
+For this test, our null hypothesis is that daily mean temperature does not differ between 1939 and 2021 at the weather station.
+
+```{r}
+wilcox.test(mean_temp~Year, data = merged)
+```
+
+With a p-value of 0.00043, we have strong evidence against the null hypothesis, suggesting that daily mean temperature is very possibly different across the two years. Combined with the earlier summary statistics, it would imply daily mean temperature has increased from 1939 to 2021. 
+
+
+## 4. Supporting Visuals
+```{r, echo=FALSE, fig.cap="Boxplot for daily mean temperature at Fort Ross, Nunaavut weather station."}
+merged %>%
+  ggplot(mapping = aes(mean_temp)) +
+  geom_boxplot() +
+  coord_flip() + 
+  xlab("Daily Mean Temperature")
+```
+Here, we take note that there aren't outliers identified by the boxplot, which is good because it means they didn't affect the validity of our statistical conclusions.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.cap="Histogram for daily mean temperature at Fort Ross, Nunavut weather station."}
+merged %>%
+  ggplot(mapping = aes(mean_temp)) +
+  geom_histogram(fill = "#A0CFD3") +
+  xlab("Daily Mean Temperature")
+```
+From the histogram, we can see that daily mean temperature isn't normally distributed, with peaks in several temperature ranges.
+
+Using leaflet, we create a map to illustrate where the weather station is located during each year recorded in the merged dataset. 
+
+```{r}
+# Define a color for each year
+yearCol <- colorFactor(palette = c("#FF6542", "#E8CEE4"), merged$Year)
+
+# Create a map
+merged %>%
+  leaflet() %>%
+  addProviderTiles('OpenStreetMap') %>%
+  addCircles(lat=~`Latitude (y)`, lng=~`Longitude (x)`, opacity=1, fillOpacity=1, radius=100, color=~yearCol(Year)) %>%
+  addLegend('bottomright', pal = yearCol, values = merged$Year,
+            title = 'Weather Station Location in Year',
+            opacity = 1)
+```
+
+In the map above, we observe that the weather station moved further north from 1939 to 2021. Usually with a further northern location, daily temperature is more likely to decrease. However in the case of this dataset, the opposite occurred, suggesting that other factors increasing temperature overtime outweighed the effect of change in location. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
