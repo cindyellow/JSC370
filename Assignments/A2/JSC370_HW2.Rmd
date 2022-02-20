@@ -1,0 +1,28 @@
+---
+title: "JSC370_HW2"
+author: "Shih-Ting (Cindy) Huang"
+date: "2/19/2022"
+output: html_document
+---
+
+```{r}
+download.file(
+  "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/homework/hw2/chs_individual.csv",
+  destfile = "chs_individual.csv",
+  method   = "curl",
+  timeout  = 60
+  )
+
+download.file(
+  "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/homework/hw2/chs_regional_geo.csv",
+  destfile = "chs_regional_geo.csv",
+  method   = "curl",
+  timeout  = 60
+  )
+
+chs_ind <- data.table::fread("chs_individual.csv")
+chs_reg <- data.table::fread("chs_regional_geo.csv")
+chs <- merge(x=chs_ind, y = chs_reg, 
+             all.x = T, all.y = T, by.x="USAFID", by.y = "USAF")
+```
+
