@@ -8,6 +8,7 @@ output: html_document
 library(data.table)
 library(tidyverse)
 library(dplyr)
+library(leaflet)
 ```
 
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
@@ -37,36 +38,53 @@ dim(chs_reg)
 dim(chs)
 ```
 
-
-
 ```{r}
-# Impute data
-colnames <- names(chs)
-
+summary(chs)
+```
+```{r, warning=FALSE}
+# Categorical
 getmode <- function(v) {
  uniqv <- unique(v)
  uniqv[which.max(tabulate(match(v, uniqv)))]
 }
+chs[, avg_val := getmode(asthma), by=.(male==1, hispanic==1)]
+chs[, asthma  := fifelse(is.na(asthma), avg_val, asthma)]
+chs[, avg_val := getmode(father_asthma), by=.(male==1, hispanic==1)]
+chs[, father_asthma  := fifelse(is.na(father_asthma), avg_val, father_asthma)]
+chs[, avg_val := getmode(mother_asthma), by=.(male==1, hispanic==1)]
+chs[, mother_asthma  := fifelse(is.na(mother_asthma), avg_val, mother_asthma)]
+chs[, avg_val := getmode(wheeze), by=.(male==1, hispanic==1)]
+chs[, wheeze  := fifelse(is.na(wheeze), avg_val, wheeze)]
+chs[, avg_val := getmode(hayfever), by=.(male==1, hispanic==1)]
+chs[, hayfever  := fifelse(is.na(hayfever), avg_val, hayfever)]
+chs[, avg_val := getmode(allergy), by=.(male==1, hispanic==1)]
+chs[, allergy  := fifelse(is.na(allergy), avg_val, allergy)]
+chs[, avg_val := getmode(educ_parent), by=.(male==1, hispanic==1)]
+chs[, educ_parent  := fifelse(is.na(educ_parent), avg_val, educ_parent)]
+chs[, avg_val := getmode(smoke), by=.(male==1, hispanic==1)]
+chs[, smoke  := fifelse(is.na(smoke), avg_val, smoke)]
+chs[, avg_val := getmode(gasstove), by=.(male==1, hispanic==1)]
+chs[, gasstove  := fifelse(is.na(gasstove), avg_val, gasstove)]
 
-for(i in 1:ncol(chs)){
-  if (length(unique(chs[,..i])) == 2){
-    avg_val <- getmode(chs[chs$male == 1 & chs$hispanic == 1, ..i])
-  }else{
-    avg_val <- mean(chs[chs$male==1 & chs$hispanic == 1, ..i])
-  }
-  chs[is.na(chs[,..i]), ]
-  # chs[, ..i  := fifelse(is.na(chs[,..i]), avg_val, chs[,..i])]
-}
-```
-
-```{r}
-avg <- getmode(chs[chs$male==1 & chs$hispanic == 1])
-chs[, hayfever  := fifelse(is.na(chs[,hayfever]), as.numeric(avg), hayfever)]
-
-```
-
-```{r}
-avg
+# Continuous
+chs[, avg_val := mean(agepft, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, agepft  := fifelse(is.na(agepft), avg_val, agepft)]
+chs[, avg_val := mean(height, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, height  := fifelse(is.na(height), avg_val, height)]
+chs[, avg_val := mean(weight, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, weight  := fifelse(is.na(weight), avg_val, weight)]
+chs[, avg_val := mean(bmi, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, bmi  := fifelse(is.na(bmi), avg_val, bmi)]
+chs[, avg_val := mean(fev, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, fev  := fifelse(is.na(fev), avg_val, fev)]
+chs[, avg_val := mean(fvc, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, fvc  := fifelse(is.na(fvc), avg_val, fvc)]
+chs[, avg_val := mean(mmef, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, mmef  := fifelse(is.na(mmef), avg_val, mmef)]
+chs[, avg_val := mean(no_24hr, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, no_24hr  := fifelse(is.na(no_24hr), avg_val, no_24hr)]
+chs[, avg_val := mean(pm2_5_fr, na.rm=TRUE), by=.(male==1, hispanic==1)]
+chs[, pm2_5_fr  := fifelse(is.na(pm2_5_fr), avg_val, pm2_5_fr)]
 ```
 
 ```{r}
@@ -134,16 +152,99 @@ tab <- chs[, .(
 knitr::kable(tab, caption = "A summary of data by smoke-gas category")
 ```
 
+## EDA
 
+```{r}
+chs %>%
+  ggplot(aes(x=bmi, y=fev)) +
+    geom_point() +
+    facet_wrap(~townname) +
+    theme_minimal()
+```
 
+```{r}
+chs %>%
+  ggplot(aes(x=fev, fill=obesity_level)) +
+  geom_histogram() +
+  scale_fill_manual(values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
+  theme_minimal()
+```
 
+```{r}
+chs %>%
+  ggplot(aes(x=fev, fill=smoke_gas_exposure)) +
+  geom_histogram() +
+  scale_fill_manual(values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
+  theme_minimal()
+```
 
+```{r}
+chs %>%
+  ggplot(aes(x=obesity_level, fill=smoke_gas_exposure)) +
+  geom_bar() +
+  scale_fill_manual(values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
+  theme_minimal()
+```
 
+```{r}
+# Statistical summary graphs
+chs %>%
+  ggplot() +
+    aes(x = obesity_level, y = fev) +
+  # Summarize data, fun.data is a function that returns ymin, y, ymax
+    stat_summary(fun.data="mean_sdl", geom="errorbar") +
+    stat_summary(fun.data="mean_sdl") +
+    xlab("Obesity Level") +
+    ylab("Forced expiratory volume in 1 second (ml)") +
+    theme_minimal()
 
+chs %>%
+  ggplot() +
+    aes(x = smoke_gas_exposure, y = fev) +
+  # Summarize data, fun.data is a function that returns ymin, y, ymax
+    stat_summary(fun.data="mean_sdl", geom="errorbar") +
+    stat_summary(fun.data="mean_sdl") + 
+    xlab("Smoke Gas Exposure") +
+    ylab("Forced expiratory volume in 1 second (ml)") +
+    theme_minimal()
+```
 
+```{r}
+pm_pal <- colorNumeric(c('#D4C2FC', '#998FC7', '#28262C'), domain = chs$pm25_mass[!is.na(chs$pm25_mass)], na.color = NA)
 
+chs %>%
+  leaflet() %>%
+  addProviderTiles('OpenStreetMap') %>%
+  addCircles(lat=~lat, lng=~lon, color=~pm_pal(pm25_mass), label =~paste(round(pm25_mass,2), 'PM2.5 mass'), opacity = 1, fillOpacity=1, radius=~pm25_mass*300) %>%
+  addLegend('bottomleft', pal = pm_pal, values = chs$pm25_mass, title = "PM 2.5 mass", opacity=1, na.label=NULL)
+```
 
+```{r}
+chs %>%
+  ggplot(aes(x = fev, fill=as.factor(pm25_mass))) +
+    geom_histogram()
+```
 
+## Advanced Regression
+```{r}
+ggplot(chs, aes(x=weight, y = fev)) + 
+  geom_point()+
+  geom_smooth(method="lm") +
+  geom_smooth(method="gam", col=2)
+```
+
+```{r}
+mod0 <- lm(fev ~ weight + agepft + male + as.factor(race), data = chs)
+summary(mod0)
+plot(mod0)
+```
+
+```{r}
+library(mgcv)
+gam_mod <- gam(fev ~ s(weight, bs="cr", k=20) + agepft + male + as.factor(race), data=chs)
+summary(gam_mod)
+plot(gam_mod)
+```
 
 
 
