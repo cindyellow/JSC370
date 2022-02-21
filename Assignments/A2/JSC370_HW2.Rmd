@@ -1,9 +1,17 @@
 ---
-title: "JSC370_HW2"
+title: "Data Visualization, Wrangling, and Advanced Regression"
+subtitle: "JSC370 - HW2"
 author: "Shih-Ting (Cindy) Huang"
-date: "2/19/2022"
-output: html_document
+date: "02/21/2022"
+output:   
+  html_document:
+    theme: lumen
+    highlight: tango
 ---
+## Introduction
+
+The goal of this project is to analyze relationships of several key variables in the Southern California Children's Health Study dataset, which contains information on the subjects as well measurements of their communities.
+
 ```{r setup, message=FALSE, echo=FALSE, warning=FALSE}
 library(data.table)
 library(tidyverse)
@@ -11,6 +19,7 @@ library(dplyr)
 library(leaflet)
 ```
 
+After downloading the two CHS datasets - one for individual and the other for regional - we proceed to merge them into dataset `chs` based on townname. To make sure we don't have duplicates, let's check the dimensions for all three datasets.
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 download.file(
   "https://raw.githubusercontent.com/JSC370/jsc370-2022/main/homework/hw2/chs_individual.csv",
@@ -32,16 +41,32 @@ chs <- merge(x=chs_ind, y = chs_reg,
              all.x = T, all.y = T, by.x="townname", by.y = "townname")
 ```
 
-```{r}
-dim(chs_ind)
-dim(chs_reg)
-dim(chs)
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+dim_ind <- dim(chs_ind)
+dim_reg <- dim(chs_reg)
+dim_chs <- dim(chs)
+
+tibble(Dataset = c("Individual", "Regional", "Merged"),
+       Rows = c(dim_ind[1], dim_reg[1], dim_chs[1]),
+       Columns = c(dim_ind[2], dim_reg[2], dim_chs[2])) %>%
+  knitr::kable(caption = "Dataset Dimensions")
 ```
 
-```{r}
-summary(chs)
+There are no duplicates because the merged dataset still has 1,200 observations as originally in individual. We then check to see if there are missing values in the dataset.
+
+## Data Wrangling
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+library(kableExtra)
+tab <- apply(chs, 2, function(col)round(sum(is.na(col))/length(col),3))
+
+kable(tab, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables") %>%
+  kable_styling("striped", full_width = F) %>% 
+ scroll_box(width = "100%", height = "200px")
 ```
-```{r, warning=FALSE}
+
+Depending on if the variable is categorical or continuous, we will impute the missing values using the mode/mean of that variable for Hispanic males (male == 1, hispanic == 1).
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
 # Categorical
 getmode <- function(v) {
  uniqv <- unique(v)
@@ -87,106 +112,159 @@ chs[, avg_val := mean(pm2_5_fr, na.rm=TRUE), by=.(male==1, hispanic==1)]
 chs[, pm2_5_fr  := fifelse(is.na(pm2_5_fr), avg_val, pm2_5_fr)]
 ```
 
-```{r}
+
+We then create categories for BMI - underweight(<14), normal(14-22), overweight(22-24), and obese(>24) and look at BMI summary separately for each category.
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs[, obesity_level := fifelse(bmi < 14, "underweight", fifelse(bmi <=22, "normal", fifelse(bmi<=24, "overweight", "obese")))]
 ```
 
-```{r}
-tab <- chs[, .(
-  num_observations = .N,
-  min_bmi = min(bmi),
-  max_bmi = max(bmi)
-), by = obesity_level]
-
-knitr::kable(tab, caption = "A summary of data by obesity category")
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+tibble(chs[, .(
+  `Num. observations` = .N,
+  `Min. BMI` = round(min(bmi),3),
+  `Max. BMI` = round(max(bmi),3)
+), by = obesity_level]) %>%
+  kable(caption = "Summary of BMI by Obesity Level") %>%
+  kable_styling(full_width=T)
 ```
+The data is highly imbalanced as there are significantly more observations with normal BMI than of other categories. The minimum BMI is 11.296, and the maximum is 41.266.
 
+Next, we create categories using variables *smoke* and *gasstove*, which are indicators for if they are present in the residence. The categories are *"Neither", "Both", "Smoke", and "Gas"*.
 
-```{r}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs[, smoke_gas_exposure := fifelse(smoke == 1, fifelse(gasstove == 1, "Both", "Second-hand Smoke"),fifelse(gasstove==1, "Gas", "Neither"))]
 ```
 
+With this newly created variable, we look at statistics of forced expiratory volume and asthma, specifically their average and standard deviation. The same is done for town of residence, sex, and obesity level.
 
-```{r}
-tab <- chs[, .(
-  "Average Forced Expiratory Volume" = mean(fev),
-  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
-  "Asthma Proportion" = sum(asthma)/.N,
-  "Asthma Standard Deviation" = sd(asthma)
-), by = townname]
+First, we notice that average FEV is highest among subjects exposed to neither and lowest among those exposed to gas. Proportion of asthma-diagnosed participants is highest for residences exposed to second-hand smoke. 
 
-knitr::kable(tab, caption = "A summary of data by town category")
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+tibble(chs[, .(
+  "Average Forced Expiratory Volume" = round(mean(fev),3),
+  "Standard Deviation of Forced Expiratory Volume" = round(sd(fev),3),
+  "Asthma Proportion" = round(sum(asthma)/.N,3),
+  "Asthma Standard Deviation" = round(sd(asthma),3)
+), by = smoke_gas_exposure]) %>%
+  kable(caption = "Summary of FEV & Asthma by Smoke-gas Category")%>%
+  kable_styling(full_width=T)
+```
+
+Observing the different residence areas, Alpine has the highest average FEV (2087.083) whereas Atascadero has the highest proportion of individuals with asthma (0.25). There seems to be more variation for FEV in Lompoc, and for asthma in Atascadero.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+tibble(chs[, .(
+  "Average Forced Expiratory Volume" = round(mean(fev),3),
+  "Standard Deviation of Forced Expiratory Volume" = round(sd(fev),3),
+  "Asthma Proportion" = round(sum(asthma)/.N,3),
+  "Asthma Standard Deviation" = round(sd(asthma),3)
+), by = townname]) %>%
+  kable(caption = "Summary of FEV & Asthma by Town Category")%>%
+  kable_styling(full_width=T)
+```
+
+In terms of sex, there is higher average FEV and asthma proportion for male subjects than female.
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+tibble(chs[, .("Sex" = fifelse(male==1, "Male", "Female"),
+  "Average Forced Expiratory Volume" = round(mean(fev),3),
+  "Standard Deviation of Forced Expiratory Volume" = round(sd(fev),3),
+  "Asthma Proportion" = round(sum(asthma)/.N,3),
+  "Asthma Standard Deviation" = round(sd(asthma),3)
+), by = male]) %>%
+  kable(caption = "Summary of FEV & Asthma by Sex Category")%>%
+  kable_styling(full_width=T)
+
+```
+
+Lastly, looking at obesity levels, both the average FEV and asthma proportion increase as BMI does, suggesting possible correlation. 
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+tibble(chs[, .(
+  "Average Forced Expiratory Volume" = round(mean(fev),3),
+  "Standard Deviation of Forced Expiratory Volume" = round(sd(fev),3),
+  "Asthma Proportion" = round(sum(asthma)/.N,3),
+  "Asthma Standard Deviation" = round(sd(asthma),3)
+), by = obesity_level]) %>%
+  kable(caption = "Summary of FEV & Asthma by Obesity Category")%>%
+  kable_styling(full_width=T)
 ```
 
 
-```{r}
-tab <- chs[, .("Sex" = fifelse(male==1, "Male", "Female"),
-  "Average Forced Expiratory Volume" = mean(fev),
-  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
-  "Asthma Proportion" = sum(asthma)/.N,
-  "Asthma Standard Deviation" = sd(asthma)
-), by = male]
+## Exploratory Data Analysis
 
-knitr::kable(tab, caption = "A summary of data by town category")
+After a brief summary of some key variables, we then continue to look at the association between:
 
-```
-```{r}
-tab <- chs[, .(
-  "Average Forced Expiratory Volume" = mean(fev),
-  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
-  "Asthma Proportion" = sum(asthma)/.N,
-  "Asthma Standard Deviation" = sd(asthma)
-), by = obesity_level]
+* BMI and FEV
+* Smoke-gas-exposure and FEV
+* PM2.5 exposure and FEV
 
-knitr::kable(tab, caption = "A summary of data by obesity category")
-```
+### Pairwise Distribution: BMI & FEV
 
-```{r}
-tab <- chs[, .(
-  "Average Forced Expiratory Volume" = mean(fev),
-  "Standard Deviation of Forced Expiratory Volume" = sd(fev),
-  "Asthma Proportion" = sum(asthma)/.N,
-  "Asthma Standard Deviation" = sd(asthma)
-), by = smoke_gas_exposure]
+First, we look at the relationship between BMI and FEV in different residence areas and fitting a linear line. There is a slightly positive linear relationship between the two variables, although points seem to be more concentrated in the bottom left, which corresponds to low BMI and FEV. 
 
-knitr::kable(tab, caption = "A summary of data by smoke-gas category")
-```
-
-## EDA
-
-```{r}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs %>%
   ggplot(aes(x=bmi, y=fev)) +
     geom_point() +
+    geom_smooth(method="lm") +
     facet_wrap(~townname) +
-    theme_minimal()
+    theme_minimal() +
+    labs(title="Pairwise Distribution of BMI and FEV in Towns") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("BMI") +
+    ylab("Forced expiratory volume in 1 second (ml)")
 ```
 
-```{r}
+### Distribution: FEV (by obesity level & smoke-gas-exposure)
+
+Next, plotting an FEV histogram stacked by obesity level, we see that values for FEV generally concentrate around 2,000-2,250. People classified as normal by BMI are the most common for all values of FEV, whereas underweight individuals generally have lower FEV.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs %>%
   ggplot(aes(x=fev, fill=obesity_level)) +
   geom_histogram() +
-  scale_fill_manual(values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
-  theme_minimal()
+  scale_fill_manual(name = 'BMI Category', values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
+  theme_minimal() +
+  xlab("Forced expiratory volume in 1 second (ml)") + 
+  ylab("Frequency") +
+  labs(title="Histogram of FEV by Obesity Level") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
-```{r}
+The relationship between FEV and smoke-gas-exposure is similar in that one category is most present at all levels of FEV. There are the most individuals living in residences exposed to gas, and it is interesting to note that distribution for each category align with the overall pattern in FEV.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs %>%
   ggplot(aes(x=fev, fill=smoke_gas_exposure)) +
   geom_histogram() +
-  scale_fill_manual(values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
-  theme_minimal()
+  scale_fill_manual(name = 'Smoke-Gas Exposure Category', values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
+  theme_minimal() +
+  xlab("Forced expiratory volume in 1 second (ml)") + 
+  ylab("Frequency") +
+  labs(title="Histogram of FEV by Smoke-gas-exposure") +
+  theme(plot.title = element_text(hjust = 0.5)) 
 ```
 
-```{r}
+### Distribution: BMI (by smoke-gas-exposure)
+
+Before moving onto the last question of interest, we check if there's an association between BMI and smoke-gas-exposure since their relationship with FEV appear similar. When examining the distribution of obesity level stacked by smoke-gas-exposure, an interesting insight is that gas exposure has the greatest proportion among all BMI categories, followed by exposure to none. It's not surprising since we see from the previous graphs that those with normal BMI level and those exposed to gas both have peaks at around FEV = 2,150.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs %>%
   ggplot(aes(x=obesity_level, fill=smoke_gas_exposure)) +
   geom_bar() +
-  scale_fill_manual(values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
-  theme_minimal()
+  scale_fill_manual(name = 'Smoke-Gas Exposure Category', values = c("#96CDFF", "#D8E1FF", "#DBBADD", "#BE92A2")) +
+  theme_minimal() +
+  xlab("Forced expiratory volume in 1 second (ml)") + 
+  ylab("Frequency") +
+  labs(title="Bar Chart of BMI by Smoke-gas-exposure") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
-```{r}
+### Statistical Summary Graphs: FEV
+
+We try to look at them in another perspective. In the box plot of FEV categorized by obesity level (BMI), there is the highest mean for obese individuals, which calls to our earlier results in the summary table. The quantile width for all categories are fairly wide, suggesting much variation.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 # Statistical summary graphs
 chs %>%
   ggplot() +
@@ -196,8 +274,14 @@ chs %>%
     stat_summary(fun.data="mean_sdl") +
     xlab("Obesity Level") +
     ylab("Forced expiratory volume in 1 second (ml)") +
+    labs(title="Box Plot for FEV by BMI") +
+    theme(plot.title = element_text(hjust = 0.5)) +
     theme_minimal()
+```
 
+There's even more variation as we group by the categorical variable smoke-gas-exposure. FEV means are roughly the same, so we suspect there's no strong relationship between the two variables. 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs %>%
   ggplot() +
     aes(x = smoke_gas_exposure, y = fev) +
@@ -206,49 +290,115 @@ chs %>%
     stat_summary(fun.data="mean_sdl") + 
     xlab("Smoke Gas Exposure") +
     ylab("Forced expiratory volume in 1 second (ml)") +
+    labs(title="Box Plot for FEV by Smoke-gas-exposure") +
+    theme(plot.title = element_text(hjust = 0.5)) +
     theme_minimal()
 ```
 
-```{r}
+### Spatial Relationship: PM2.5 & Community
+
+Mapping PM2.5 concentration in the communities that samples were collected from, there's heavier average concentration around the Riverside, Corona area and lower levels further away, such as in Santa Maria and El Cajo. The map also confirms that all data points are taken from California, so no error points are present.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 pm_pal <- colorNumeric(c('#D4C2FC', '#998FC7', '#28262C'), domain = chs$pm25_mass[!is.na(chs$pm25_mass)], na.color = NA)
 
 chs %>%
   leaflet() %>%
   addProviderTiles('OpenStreetMap') %>%
   addCircles(lat=~lat, lng=~lon, color=~pm_pal(pm25_mass), label =~paste(round(pm25_mass,2), 'PM2.5 mass'), opacity = 1, fillOpacity=1, radius=~pm25_mass*300) %>%
-  addLegend('bottomleft', pal = pm_pal, values = chs$pm25_mass, title = "PM 2.5 mass", opacity=1, na.label=NULL)
+  addLegend('bottomleft', pal = pm_pal, values = chs$pm25_mass, title = "PM2.5 mass", opacity=1, na.label=NULL)
 ```
 
-```{r}
+
+### Distribution: FEV & PM2.5 mass
+
+Lastly, graphs for FEV versus PM2.5 mass - the annual average concentration of PM2.5 pollution - are created. 
+
+Using a scatter plot, it's apparent that PM2.5 takes only several values, suggesting that it's a multi-label variable. Distributions against FEV are similar at all levels, although more outliers occur for concentration $\approx$ 22.5, 8.25. 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+chs %>%
+  ggplot(aes(x=pm25_mass, y=fev)) +
+    geom_point() +
+    xlab("PM2.5 concentration") +
+    ylab("Forced expiratory volume in 1 second (ml)") + 
+    labs(title="Scatter Plot of PM 2.5 Concentration VS. FEV") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_minimal()
+```
+
+In an attempt to further examine their relationship, we convert PM2.5 mass to a factor variable and plot a histogram. There doesn't seem to be a strong association between certain values of PM2.5 and FEV, though it's clear that observations are centered around FEV = 2,000. 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 chs %>%
   ggplot(aes(x = fev, fill=as.factor(pm25_mass))) +
-    geom_histogram()
+    guides(fill=guide_legend(title="PM 2.5 Concentration")) +
+    geom_histogram() +
+    xlab("Forced expiratory volume in 1 second (ml)") + 
+    ylab("Frequency") +
+    labs(title="Histogram of FEV Stacked by PM 2.5 Concentration") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_minimal()
 ```
 
 ## Advanced Regression
-```{r}
+
+A more statistical way of analysis is to build a multiple linear regression model with FEV as the response. The main independent variables of interest to us here is subject weight, but we will also take into consideration age, sex, and race. 
+
+Fitting a scatter plot with regression lines, points are concentrated in the area weight = 60 and FEV = 1,750-2,000. A spline model line seems to better represent the relationship than a simple linear regression line, but we'll formally assess their performance by constructing a model for each.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 ggplot(chs, aes(x=weight, y = fev)) + 
   geom_point()+
   geom_smooth(method="lm") +
-  geom_smooth(method="gam", col=2)
+  geom_smooth(method="gam", col=2) +
+  xlab("Weight") +
+  ylab("FEV") +
+  labs(title="Linear Model of Weight VS. FEV") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal()
 ```
+In the simple linear regression model, normality seems approximately satisfied since the tails in the Q-Q plot aren't too far off the fitted line. From the residuals versus fitted plot, we see a cluster on the left, which could suggest that a simple linear model isn't the most suitable. If we assume that linear assumptions are satisfied, we see a strong positive relationship between FEV and weight, age, sex, and four other race categories. 
 
-```{r}
-mod0 <- lm(fev ~ weight + agepft + male + as.factor(race), data = chs)
-summary(mod0)
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(broom)
+mod0 <- lm(fev ~ weight + agepft + male + as.factor(race), data = chs) 
+mod0_adj_r <- summary(mod0)$adj.r.squared
+
+mod0 %>%
+  tidy() %>%
+  mutate(
+    p.value = scales::pvalue(p.value),
+    term = c("Intercept", "Weight", "Age", "Male", "Race=Black", "Race=Did Not Respond", "Race=Mixed", "Race=Other", "Race=White")) %>%
+  kable(caption = "Coefficient Estimates for a Linear Model Estimating FEV",
+    col.names = c("Predictor", "B", "SE", "t", "p"),
+    digits = c(0, 2, 3, 2, 3))%>%
+  kable_styling(full_width=T)
+
+par(mfrow=c(2,2))
 plot(mod0)
 ```
 
-```{r}
+Next, we graph a spline model using `gam()` that puts a cubic regression spline on variable `weight`, which gives us an estimated coefficient 5.012 for smoothed term weight, suggesting a fairly strong positive relationship with FEV. 
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 library(mgcv)
-gam_mod <- gam(fev ~ s(weight, bs="cr", k=20) + agepft + male + as.factor(race), data=chs)
-summary(gam_mod)
-plot(gam_mod)
+gam_mod <- gam(fev ~ s(weight, bs="cr", k=20) + agepft + male + as.factor(race), data=chs) 
+gam_adj_r <- summary(gam_mod)$r.sq
+
+gam_mod %>%
+    tidy() %>%
+  mutate(p.value = scales::pvalue(p.value), term=c("smooth(weight)")) %>%
+  kable(caption = "Smooth Coefficient Estimate for a Linear Model Estimating FEV",
+    col.names = c("Predictor", "B", "SE", "t", "p"),
+    digits = c(0, 2, 3, 2, 3))%>%
+  kable_styling(full_width=T)
+
+plot(gam_mod, main="Spline Model of FEV VS Weight", xlab="Weight",ylab="Smooth")
 ```
 
+## Conclusion
 
-
-
+Comparing adjusted R-squared of the linear regression model (`r round(mod0_adj_r,3)`) and the spline model with cubic regression (`r round(gam_adj_r,3)`), the spline model is a better fit for the specified variables with a higher score. Moreover, the curve is much smoother and picks up non-linear relationships present in the data.
 
 
 
