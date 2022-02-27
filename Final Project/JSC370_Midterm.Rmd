@@ -1,0 +1,67 @@
+---
+title: ""
+subtitle: "JSC370 Midterm Report"
+author: "Shih-Ting (Cindy) Huang"
+date: "02/27/2022"
+output: 
+  html_document:
+    theme: lumen
+    highlight: tango
+---
+
+## Introduction 
+Research question: How has COVID-19 affected restaurant performance?
+* background on dataset and formulated question
+
+Yelp is one of the biggest platforms that shares information of businesses and enable users to search for, react to, and/or share their opinions of such businesses. After the emergence of COVID-19 in early 2020, undoubtedly many businesses were forced to close temporarily or permanently. 
+
+
+## Methods
+The data were retrieved directly from [Yelp's Open Dataset](https://www.yelp.com/dataset) in a `.tar` compressed file. Extracting the respective json files and converting each to csv using Python, we select two relevant datasets - `business` and `review`, which provides details on a business and a review respectively. Data comes from 6,990,280 reviews and 150,346 businesses from 11 metropolitan areas. 
+
+All figures were created with `ggplot2`.
+
+* how and where the data were acquired
+* how you cleaned and wrangled the data
+* what tools you used for data exploration
+
+## Preliminary Results
+* summary statistics
+
+## Conclusion
+* what i found in terms of the question
+```{r setup, message=FALSE, warning=FALSE, echo=FALSE}
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(leaflet)
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+business <- data.table::fread("yelp_business.csv")
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, eval=FALSE}
+head(business)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
