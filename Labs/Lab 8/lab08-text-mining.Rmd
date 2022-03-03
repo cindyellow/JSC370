@@ -1,10 +1,11 @@
 ---
 title: "Lab 08 - Text Mining"
+author: "Shih-Ting (Cindy) Huang"
 output: html_document
 ---
 
 ```{r setup}
-knitr::opts_chunk$set(eval = F, include  = T)
+knitr::opts_chunk$set(eval = T, warning=F, echo=F)
 ```
 
 # Learning goals
@@ -52,11 +53,16 @@ head(mt_samples)
 
 ## Question 1: What specialties do we have?
 
-We can use `count()` from `dplyr` to figure out how many different catagories do we have? Are these catagories related? overlapping? evenly distributed?
+We can use `count()` from `dplyr` to figure out how many different categories do we have? Are these categories related? overlapping? evenly distributed?
 
 ```{r}
 mt_samples %>%
-  count(medical_specialty, sort = TRUE)
+  count(medical_specialty, sort = TRUE) %>%
+  ggplot(aes(medical_specialty, n)) +
+  geom_bar(stat="identity") +
+  xlab("Medical Specialty") +
+  ylab("Frequency") +
+  coord_flip()
 ```
 
 ---
@@ -83,7 +89,10 @@ tokens <- mt_samples %>%
 tokens %>%
   ggplot(aes(x = reorder(word, word_frequency), word_frequency)) +
   # stat means use y column values directly instead of counting
-  geom_bar(stat="identity") + coord_flip()
+  geom_bar(stat="identity") + coord_flip() +
+  ylab("Frequency") +
+  xlab("Word") +
+  labs(title = "General Word Frequency")
 
 library(wordcloud)
 # Creates wordcloud for the most frequent words
@@ -119,10 +128,11 @@ tokens <- mt_samples %>%
 tokens %>%
   ggplot(aes(x = reorder(word, word_frequency), y = word_frequency)) +
   geom_bar(stat="identity", fill = "#9E788F") +
-  xlab("Frequency") +
-  ylab("Word") +
+  ylab("Frequency") +
+  xlab("Word") +
   theme_minimal()+
-  coord_flip()
+  coord_flip() +
+  labs(title = "General Word Frequency (Stopwords Removed)")
 
 wordcloud(tokens$word, tokens$word_frequency)
 ```
@@ -144,42 +154,49 @@ tokens_bigram <- mt_samples %>%
   # do on word1 and  word2 separately, "wordx" is the col name in tokens, "word" is the col name in stop_Words
   anti_join(stop_words, by = c("word1"= "word")) %>%
   anti_join(stop_words, by = c("word2"="word")) %>%
-  arrange(across(bigram_frequency, desc)) %>%
-  head(20)
+  subset(!grepl("\\d+", bigram)) %>%
+  arrange(across(bigram_frequency, desc))
 
 ```
 
 ```{r}
 tokens_bigram %>%
+  head(20) %>%
   ggplot(aes(x=reorder(bigram, bigram_frequency), y=bigram_frequency)) +
   geom_bar(stat="identity", fill = "#7284A8") + 
   xlab("Frequency") +
   ylab("Bigram") +
   theme_minimal()+
-  coord_flip()
+  coord_flip() +
+  labs(title = "Bigram Frequency")
 ```
 ```{r}
 tokens_trigram <- mt_samples %>%
   select(transcription) %>%
   unnest_tokens(trigram, transcription, token="ngrams", n=3) %>%
   group_by(trigram) %>%
-  summarise(trigram_frequency = n()) %>%
+  summarise(trigram_frequency = n())
+
+tokens_trigram <- tokens_trigram %>%
   separate(trigram, c("word1", "word2", "word3"), extra="drop", remove=F, sep = " ", fill = "right") %>%
   anti_join(stop_words, by = c("word1"= "word")) %>%
   anti_join(stop_words, by = c("word2"="word")) %>%
   anti_join(stop_words, by = c("word3"="word")) %>%
-  arrange(across(trigram_frequency, desc)) %>%
-  head(20)
+  # match digit anywhere in the word
+  subset(!grepl("\\d+", trigram)) %>%
+  arrange(across(trigram_frequency, desc)) 
 ```
 
 ```{r}
 tokens_trigram %>%
+  head(20) %>%
   ggplot(aes(x=reorder(trigram, trigram_frequency), y=trigram_frequency)) +
   geom_bar(stat="identity", fill = "#474954") + 
   xlab("Frequency") +
   ylab("Trigram") + 
   theme_minimal()+
-  coord_flip()
+  coord_flip() +
+  labs(title = "Trigram Frequency")
 ```
 
 ---
@@ -187,12 +204,63 @@ tokens_trigram %>%
 # Question 5
 
 Using the results you got from question 4. Pick a word and count the words that appears after and before it.
+```{r}
+tokens_trigram %>% 
+  subset(word2 == "blood") %>%
+  group_by(word1) %>%
+  summarise(word1_freq=n()) %>%
+  arrange(across(word1_freq, desc)) %>%
+  head(20) %>%
+  ggplot(aes(x=reorder(word1, word1_freq), y=word1_freq)) +
+  geom_bar(stat="identity", fill = "#252627") +
+  ylab("Frequency") +
+  xlab("Word 1") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Frequency of Words Preceding 'blood' ")
+```
+
+```{r}
+tokens_trigram %>% 
+  subset(word2 == "blood") %>%
+  group_by(word3) %>%
+  summarise(word3_freq=n()) %>%
+  arrange(across(word3_freq, desc)) %>%
+  head(20) %>%
+  ggplot(aes(x=reorder(word3, word3_freq), y=word3_freq)) +
+  geom_bar(stat="identity", fill = "#A9B3CE") +
+  ylab("Frequency") +
+  xlab("Word 3") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Frequency of Words After 'blood'")
+  
+```
+
+
 
 ---
 
 # Question 6 
 
 Which words are most used in each of the specialties. you can use `group_by()` and `top_n()` from `dplyr` to have the calculations be done within each specialty. Remember to remove stopwords. How about the most 5 used words?
+
+```{r}
+mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by = "word") %>%
+  subset(!grepl("^\\d+$", word)) %>%
+  group_by(medical_specialty) %>%
+  count(word, sort=T) %>%
+  top_n(1,n) %>%
+  ggplot(aes(x=medical_specialty, y = n, fill = word)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  ylab("Frequency") +
+  xlab("Medical Specialty") +
+  theme_minimal()
+```
+
 
 # Question 7 - extra
 
@@ -202,6 +270,34 @@ Ideas:
 
 - Interesting ngrams
 - See if certain words are used more in some specialties then others
+
+```{r}
+word_comp <- mt_samples %>%
+  select(transcription, medical_specialty) %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by = "word") %>%
+  subset(!grepl("^\\d+$", word)) %>%
+  subset(word == "patient" | word == "pain" | word =="tumor") %>%
+  group_by(word, medical_specialty) %>%
+  summarise(word_frequency = n()) %>%
+  arrange(across(word_frequency, desc))
+```
+
+```{r}
+head(word_comp)
+```
+
+```{r}
+word_comp %>%
+  ggplot(aes(medical_specialty, word_frequency)) +
+  geom_bar(stat="identity") +
+  facet_wrap(~word) +
+  xlab("Medical Specialty") +
+  ylab("Frequency") +
+  coord_flip() +
+  labs(title = "Frequency of Specified Words in Medical Specialties")
+```
+Looking specifically at the words "pain", "patient", and "tumor", we observer that the surgery category has the most mentions of "patient" and "tumor", whereas the consulting category has the most mentions of "pain".
 
 # Deliverables
 
