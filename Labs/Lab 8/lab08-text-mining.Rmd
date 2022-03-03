@@ -1,0 +1,139 @@
+---
+title: "Lab 08 - Text Mining"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(eval = F, include  = T)
+```
+
+# Learning goals
+
+- Use `unnest_tokens()` and `unnest_ngrams()` to extract tokens and ngrams from text.
+- Use dplyr and ggplot2 to analyze text data
+
+# Lab description
+
+For this lab we will be working with the medical record transcriptions from https://www.mtsamples.com/. And is loaded and "fairly" cleaned at https://github.com/JSC370/jsc370-2022/blob/main/data/medical_transcriptions/mtsamples.csv.
+
+This markdown document should be rendered using `github_document` document.
+
+
+
+### Setup packages
+
+You should load in `dplyr`, (or `data.table` if you want to work that way), `ggplot2` and `tidytext`.
+If you don't already have `tidytext` then you can install with
+
+```{r, eval=FALSE}
+install.packages("tidytext")
+```
+
+### read in Medical Transcriptions
+
+Loading in reference transcription samples from https://www.mtsamples.com/
+
+```{r, warning=FALSE, message=FALSE}
+library(tidytext)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(wordcloud)
+
+mt_samples <- read_csv("https://raw.githubusercontent.com/JSC370/jsc370-2022/main/data/medical_transcriptions/mtsamples.csv")
+mt_samples <- mt_samples %>%
+  select(description, medical_specialty, transcription)
+
+head(mt_samples)
+```
+
+---
+
+## Question 1: What specialties do we have?
+
+We can use `count()` from `dplyr` to figure out how many different catagories do we have? Are these catagories related? overlapping? evenly distributed?
+
+```{r}
+mt_samples %>%
+  count(medical_specialty, sort = TRUE)
+```
+
+---
+
+## Question 2
+
+- Tokenize the the words in the `transcription` column
+- Count the number of times each token appears
+- Visualize the top 20 most frequent words
+
+Explain what we see from this result. Does it makes sense? What insights (if any) do we get?
+
+```{r}
+tokens <- mt_samples %>%
+  select(transcription) %>%
+  # output col is word, input is transcription
+  unnest_tokens(word, transcription) %>%
+  group_by(word) %>%
+  summarise(word_frequency = n()) %>%
+  # arrange by word frequency from most frequent
+  arrange(across(word_frequency, desc)) %>%
+  head(20)
+
+tokens %>%
+  ggplot(aes(x = reorder(word, word_frequency), word_frequency)) +
+  # stat means use y column values directly instead of counting
+  geom_bar(stat="identity") + coord_flip()
+
+library(wordcloud)
+# Creates wordcloud for the most frequent words
+wordcloud(tokens$word, tokens$word_frequency)
+```
+
+- We don't get a lot of meanignful insights from the results shown above because we have included stopwords (ex. "the", "and", "of", etc.), which appear the most common in the corpus.
+
+
+---
+
+## Question 3
+
+- Redo visualization but remove stopwords before
+- Bonus points if you remove numbers as well
+
+What do we see know that we have removed stop words? Does it give us a better idea of what the text is about?
+
+```{r}
+
+```
+
+
+---
+
+# Question 4
+
+Repeat question 2, but this time tokenize into bi-grams. How does the result change if you look at tri-grams?
+
+---
+
+# Question 5
+
+Using the results you got from question 4. Pick a word and count the words that appears after and before it.
+
+---
+
+# Question 6 
+
+Which words are most used in each of the specialties. you can use `group_by()` and `top_n()` from `dplyr` to have the calculations be done within each specialty. Remember to remove stopwords. How about the most 5 used words?
+
+# Question 7 - extra
+
+Find your own insight in the data:
+
+Ideas:
+
+- Interesting ngrams
+- See if certain words are used more in some specialties then others
+
+# Deliverables
+
+1. Questions 1-7 answered, pdf or html output uploaded to quercus
