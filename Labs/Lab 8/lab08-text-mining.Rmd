@@ -103,7 +103,28 @@ wordcloud(tokens$word, tokens$word_frequency)
 What do we see know that we have removed stop words? Does it give us a better idea of what the text is about?
 
 ```{r}
+tokens <- mt_samples %>%
+  select(transcription) %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by="word") %>%
+  # match where the whole section is a digit and remove those
+  subset(!grepl("^\\d+$", word)) %>%
+  group_by(word) %>%
+  summarise(word_frequency = n()) %>%
+  arrange(across(word_frequency, desc)) %>%
+  head(20)
+```
 
+```{r}
+tokens %>%
+  ggplot(aes(x = reorder(word, word_frequency), y = word_frequency)) +
+  geom_bar(stat="identity", fill = "#9E788F") +
+  xlab("Frequency") +
+  ylab("Word") +
+  theme_minimal()+
+  coord_flip()
+
+wordcloud(tokens$word, tokens$word_frequency)
 ```
 
 
@@ -112,6 +133,54 @@ What do we see know that we have removed stop words? Does it give us a better id
 # Question 4
 
 Repeat question 2, but this time tokenize into bi-grams. How does the result change if you look at tri-grams?
+```{r}
+tokens_bigram <- mt_samples %>%
+  select(transcription) %>%
+  unnest_tokens(bigram, transcription, token="ngrams", n=2) %>%
+  group_by(bigram) %>%
+  summarise(bigram_frequency = n()) %>%
+  # separate the bigram column into two; if there's more than two words then drop them
+  separate(bigram, c("word1", "word2"), extra="drop", remove=F, sep = " ", fill = "right") %>%
+  # do on word1 and  word2 separately, "wordx" is the col name in tokens, "word" is the col name in stop_Words
+  anti_join(stop_words, by = c("word1"= "word")) %>%
+  anti_join(stop_words, by = c("word2"="word")) %>%
+  arrange(across(bigram_frequency, desc)) %>%
+  head(20)
+
+```
+
+```{r}
+tokens_bigram %>%
+  ggplot(aes(x=reorder(bigram, bigram_frequency), y=bigram_frequency)) +
+  geom_bar(stat="identity", fill = "#7284A8") + 
+  xlab("Frequency") +
+  ylab("Bigram") +
+  theme_minimal()+
+  coord_flip()
+```
+```{r}
+tokens_trigram <- mt_samples %>%
+  select(transcription) %>%
+  unnest_tokens(trigram, transcription, token="ngrams", n=3) %>%
+  group_by(trigram) %>%
+  summarise(trigram_frequency = n()) %>%
+  separate(trigram, c("word1", "word2", "word3"), extra="drop", remove=F, sep = " ", fill = "right") %>%
+  anti_join(stop_words, by = c("word1"= "word")) %>%
+  anti_join(stop_words, by = c("word2"="word")) %>%
+  anti_join(stop_words, by = c("word3"="word")) %>%
+  arrange(across(trigram_frequency, desc)) %>%
+  head(20)
+```
+
+```{r}
+tokens_trigram %>%
+  ggplot(aes(x=reorder(trigram, trigram_frequency), y=trigram_frequency)) +
+  geom_bar(stat="identity", fill = "#474954") + 
+  xlab("Frequency") +
+  ylab("Trigram") + 
+  theme_minimal()+
+  coord_flip()
+```
 
 ---
 
