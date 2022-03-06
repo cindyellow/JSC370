@@ -1,5 +1,5 @@
 ---
-title: ""
+title: "Food Industry During the Pandemic"
 subtitle: "JSC370 Midterm Report"
 author: "Shih-Ting (Cindy) Huang"
 date: "02/27/2022"
@@ -8,18 +8,99 @@ output:
     theme: lumen
     highlight: tango
 ---
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
+```
+
 
 ## Introduction 
-Research question: How has COVID-19 affected restaurant performance?
-* background on dataset and formulated question
 
-Yelp is one of the biggest platforms that shares information of businesses and enable users to search for, react to, and/or share their opinions of such businesses. After the emergence of COVID-19 in early 2020, undoubtedly many businesses were forced to close temporarily or permanently. 
+After the emergence of COVID-19 in early 2020, undoubtedly many businesses were forced to close temporarily or permanently. Throughout this time, restaurants in particular have undergone various modifications, such as disabling dine-in, starting takeout, etc. As a result, the food quality, service quality, and overall dining experience might have changed - whether in a positive or negative way. 
+
+With that in mind, I propose the research question: How has COVID-19 affected restaurant performance and impression?
+
+In order to answer this question, I utilized data from Yelp, one of the biggest platforms that displays information of businesses and enable users to search for, react to, and/or share their opinions of such businesses. Their data come from a total of 6,990,280 reviews and 150,346 businesses from 11 metropolitan areas - Montreal, Calgary, Toronto, Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, Madison, and Cleveland. Only reviews that are [recommended](https://www.yelp-support.com/Recommended_Reviews) by Yelp are included. For privacy reasons, contents of the dataset will not be disclosed.
 
 
 ## Methods
-The data were retrieved directly from [Yelp's Open Dataset](https://www.yelp.com/dataset) in a `.tar` compressed file. Extracting the respective json files and converting each to csv using Python, we select two relevant datasets - `business` and `review`, which provides details on a business and a review respectively. Data comes from 6,990,280 reviews and 150,346 businesses from 11 metropolitan areas. 
+### Data Access
+The data were retrieved directly from [Yelp's Open Dataset](https://www.yelp.com/dataset) in a `.tar` compressed file. Extracting the respective json files and converting each to csv using Python, we selected two relevant datasets - `business` and `review`, which provides details on a business and a review respectively. Since we are observing the impact of COVID-19, we decided to only take reviews from the most recent five years (starting at 2017/01/01) and limit data size. 
 
-All figures were created with `ggplot2`.
+```{r setup}
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(leaflet)
+```
+
+```{r}
+bus <- data.table::fread("yelp_business.csv")
+rev <- data.table::fread("yelp_reviews.csv")
+```
+
+First, we take a look at what variables are present in each dataset. For `business`, we have:
+
+```{r}
+tibble("Variable Name" = c(colnames(bus)[1], colnames(bus)[2], colnames(bus)[3], colnames(bus)[4], colnames(bus)[5], colnames(bus)[6], colnames(bus)[7], colnames(bus)[8], colnames(bus)[9], colnames(bus)[10], colnames(bus)[11], colnames(bus)[12], colnames(bus)[13], colnames(bus)[14]),
+       Definition = c("22 character unique string business ID (str)", "Business's name (str)", "Full address of the business (str)", "City (str)", "2 character state code, if applicable (str)", "Postal code (str)", "Latitude (dbl)", "Longitude (dbl)", "Star rating from 0.0-5.0, rounded to half-stars (int)", "Number of reviews (int)", "Binary indicator for if business is open (=1) or closed (=0) (int)", "A list of features associated with the business and whether it is available (True) or unavailable (False) (dict[str][bool])", "Categories that the business belongs to (str)", "Business operating hours on a 24-hr clock (dict[str][str])")) %>%
+  knitr::kable(caption = "Yelp Business Variable Definitions, obtained and modified from Yelp Dataset Documentation")
+```
+
+
+Next, we take a look at the `review` dataset:
+```{r"}
+tibble("Variable Name" = c(colnames(rev)[2], colnames(rev)[3], colnames(rev)[4], colnames(rev)[5], colnames(rev)[6]),
+       Definition = c("22 character unique review id (str)", "22 character unique user id (str)", "22 character business id, maps to those in business dataset (str)", "Star rating (int)", "Date formatted YYYY-MM-DD (str)")) %>%
+  knitr::kable(caption = "Yelp Review Variable Definitions, obtained and modified from Yelp Dataset Documentation")
+```
+
+
+### Data Wrangling
+There is no missing values in either dataset, which means that no imputation is necessary.
+```{r, eval=FALSE}
+sum(is.na(bus))
+sum(is.na(rev))
+```
+Since we are only focusing on restaurant performance, we eliminated non-restaurant business in the `business` dataset and their corresponding reviews.
+
+```{r}
+
+```
+
+
+```{r}
+# eliminate them
+
+# get total count of businesses and reviews
+```
+
+
+
+In order to extract more information from our dataset, we will generated additional features from existing ones that may be helpful for our data exploration and analysis.
+
+```{r}
+# Binary Pre-COVID, Post-COVID
+
+# Int: length of open hours
+
+# Binary: takeout
+
+# Binary: good for groups
+
+# Binary: outdoor seating
+
+# Binary: delivery (false, none, true)
+
+# Categorical: Cuisines, Fast Food, (check what categories there are)
+
+# Categorical: price range
+
+# Multiple visits -> can users only post once?
+```
+
+
+### Tools used 
+Data wrangling were completed with `tidyverse` and `dplyr`. All figures were created with `ggplot2`.
 
 * how and where the data were acquired
 * how you cleaned and wrangled the data
@@ -27,23 +108,30 @@ All figures were created with `ggplot2`.
 
 ## Preliminary Results
 * summary statistics
+```{r}
+# histograms
+```
+
+```{r}
+# bar charts
+```
+
 
 ## Conclusion
 * what i found in terms of the question
-```{r setup, message=FALSE, warning=FALSE, echo=FALSE}
-library(data.table)
-library(tidyverse)
-library(dplyr)
-library(leaflet)
-```
 
-```{r, message=FALSE, warning=FALSE, echo=FALSE}
-business <- data.table::fread("yelp_business.csv")
-```
+
+
 
 ```{r, message=FALSE, warning=FALSE, echo=FALSE, eval=FALSE}
-head(business)
+head(bus)
+head(rev)
 ```
+```{r}
+rev$Year <- format(rev$date, format="%Y")
+```
+
+
 
 
 
