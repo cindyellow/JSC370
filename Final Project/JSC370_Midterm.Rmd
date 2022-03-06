@@ -42,46 +42,139 @@ First, we take a look at what variables are present in each dataset. For `busine
 
 ```{r}
 tibble("Variable Name" = c(colnames(bus)[1], colnames(bus)[2], colnames(bus)[3], colnames(bus)[4], colnames(bus)[5], colnames(bus)[6], colnames(bus)[7], colnames(bus)[8], colnames(bus)[9], colnames(bus)[10], colnames(bus)[11], colnames(bus)[12], colnames(bus)[13], colnames(bus)[14]),
-       Definition = c("22 character unique string business ID (str)", "Business's name (str)", "Full address of the business (str)", "City (str)", "2 character state code, if applicable (str)", "Postal code (str)", "Latitude (dbl)", "Longitude (dbl)", "Star rating from 0.0-5.0, rounded to half-stars (int)", "Number of reviews (int)", "Binary indicator for if business is open (=1) or closed (=0) (int)", "A list of features associated with the business and whether it is available (True) or unavailable (False) (dict[str][bool])", "Categories that the business belongs to (str)", "Business operating hours on a 24-hr clock (dict[str][str])")) %>%
+       Definition = c("22 character unique string business ID (str)", "Business's name (str)", "Full address of the business (str)", "City (str)", "2 character state code, if applicable (str)", "Postal code (str)", "Latitude (dbl)", "Longitude (dbl)", "Star rating from 0.0-5.0, rounded to half-stars (int)", "Number of reviews (int)", "Binary indicator for if business is open (=1) or closed (=0) (int)", "A list of features associated with the business and whether it is available (True) or unavailable (False) (dict[str][bool])", "Categories that the business belongs to (str)", "Business operating hours on a 24-hr clock (str[dict])")) %>%
   knitr::kable(caption = "Yelp Business Variable Definitions, obtained and modified from Yelp Dataset Documentation")
 ```
 
 
 Next, we take a look at the `review` dataset:
-```{r"}
+```{r}
 tibble("Variable Name" = c(colnames(rev)[2], colnames(rev)[3], colnames(rev)[4], colnames(rev)[5], colnames(rev)[6]),
        Definition = c("22 character unique review id (str)", "22 character unique user id (str)", "22 character business id, maps to those in business dataset (str)", "Star rating (int)", "Date formatted YYYY-MM-DD (str)")) %>%
   knitr::kable(caption = "Yelp Review Variable Definitions, obtained and modified from Yelp Dataset Documentation")
 ```
 
 
+
 ### Data Wrangling
-There is no missing values in either dataset, which means that no imputation is necessary.
+In order to better utilize the data for our research question, we will seek to wrangle the data as necessary.
+
+#### Ensure validity of data in each observation
+
+```{r}
+# Doublecheck data format 
+# Problem with state variable
+state_prob <- bus %>%
+  subset(!grepl("[a-zA-Z]{2}", state))
+
+sel <- rev %>%
+  subset((stars %in% c(0,0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)))
+
+```
+
+```{r}
+date_prob <- rev %>%
+  subset(!(date))
+```
+
+```{r}
+is.POSIXct <- function(x) inherits(x, "POSIXct")
+
+is.POSIXct(rev[1]$date)
+
+```
+
+#### Checking for NAs
+We notice that the datasets represent missing values as an empty string "", and below we showcase how many there are for each variable:
+
+```{r}
+# Convert empty strings to NA
+bus <- as.data.frame(lapply(bus, function(x) replace(x,x == "", NA)))
+rev[,2:5] <- as.data.frame(lapply(rev[,2:5], function(x) replace(x, x == "",NA)))
+# Table of NAs
+na_bus <- apply(bus, 2, function(col)round(sum(is.na(col))/length(col),8))
+na_rev <- apply(rev, 2, function(col)round(sum(is.na(col))/length(col),3))
+```
+
+```{r}
+library(kableExtra)
+
+kable(na_bus, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Business)") %>%
+  kable_styling("striped", full_width = F) %>% 
+ scroll_box(width = "100%", height = "200px")
+
+kable(na_rev, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Reviews)") %>%
+  kable_styling("striped", full_width = F) %>% 
+ scroll_box(width = "100%", height = "200px")
+```
+
+```{r}
+sum(is.na(bus$business_id))
+sum(is.na(bus$name))
+sum(is.na(bus$city))
+sum(is.na(bus$state))
+sum(is.na(bus$latitude))
+sum(is.na(bus$longitude))
+sum(is.na(bus$stars))
+sum(is.na(bus$review_count))
+sum(is.na(bus$is_open))
+```
+
+We notice that there are no missing values in `review`; however, in `business`, 
 ```{r, eval=FALSE}
+chs[, father_asthma  := fifelse(is.na(father_asthma), avg_val, father_asthma)]
 sum(is.na(bus))
 sum(is.na(rev))
 ```
-Since we are only focusing on restaurant performance, we eliminated non-restaurant business in the `business` dataset and their corresponding reviews.
+
+#### Filtering Observations
+Since we are only focusing on restaurant performance, we eliminated non-restaurant business in the `business` dataset and their corresponding reviews, retaining only those that are under the categories "Restaurants" or "Food". The list of categories that Yelp offers can be found [here](https://blog.yelp.com/businesses/yelp_category_list/). 
 
 ```{r}
-
+# Modify business dataset
+orig_dim_bus <- dim(bus)[1]
+bus <- bus %>%
+  subset(grepl("Restaurants", categories)) %>%
+  subset(grepl("Food", categories))
+mod_dim_bus <- dim(bus)[1]
 ```
-
 
 ```{r}
-# eliminate them
-
-# get total count of businesses and reviews
+# Modify review dataset
+# Obtain the restaurant business ids
+restaurant_ids <- unique(bus$business_id)
+orig_dim_rev <- dim(rev)[1]
+rev <- rev %>%
+  subset(business_id %in% restaurant_ids)
+mod_dim_rev <- dim(rev)[1]
 ```
 
+Originally, we have `r orig_dim_bus` businesses and `r orig_dim_rev` reviews, and after filter we reduced to `r mod_dim_bus` food businesses with `r mod_dim_rev` reviews total. 
 
 
 In order to extract more information from our dataset, we will generated additional features from existing ones that may be helpful for our data exploration and analysis.
 
+First, we try to identify businesses that opened before and after COVID-19. For the purpose of this research, we define the start of the pandemic as January 9th, 2020, which is when WHO reported globally that there has been a [new coronavirus identified](https://www.who.int/emergencies/diseases/novel-coronavirus-2019/interactive-timeline#event-7).
+
 ```{r}
-# Binary Pre-COVID, Post-COVID
+# function to find earliest review date for business
+find_earliest <- function(bus_id, rev_data){
+  all_rev <- rev_data %>% 
+    subset(business_id == bus_id)
+  min(all_rev$date)
+}
+```
+
+
+
+```{r}
+# Binary Pre-COVID (=1), Post-COVID (=0), and Unknown (=2)
+# We use the date of the earliest review for each business
+startDate = as.POSIXct("2020-01-09");
+bus[, pre_covid := fifelse(business_id %in% rev$business_id, fifelse(find_earliest(business_id, rev) <= startDate, 1, 0), 2)]
 
 # Int: length of open hours
+
 
 # Binary: takeout
 
@@ -96,6 +189,19 @@ In order to extract more information from our dataset, we will generated additio
 # Categorical: price range
 
 # Multiple visits -> can users only post once?
+```
+
+```{r}
+head(bus)
+```
+```{r}
+sel <- bus %>% subset(business_id == "eEOYSgkmpB90uNA7lDOMRA") %>% select(address)
+sel == ""
+```
+
+
+```{r}
+for (i in len(rev))
 ```
 
 
