@@ -23,7 +23,9 @@ In order to answer this question, I utilized data from Yelp, one of the biggest 
 
 
 ## Methods
+
 ### Data Access
+
 The data were retrieved directly from [Yelp's Open Dataset](https://www.yelp.com/dataset) in a `.tar` compressed file. Extracting the respective json files and converting each to csv using Python, we selected two relevant datasets - `business` and `review`, which provides details on a business and a review respectively. Since we are observing the impact of COVID-19, we decided to only take reviews from the most recent five years (starting at 2017/01/01) and limit data size. 
 
 ```{r setup}
@@ -57,77 +59,11 @@ tibble("Variable Name" = c(colnames(rev)[2], colnames(rev)[3], colnames(rev)[4],
 
 
 ### Data Wrangling
+
 In order to better utilize the data for our research question, we will seek to wrangle the data as necessary.
 
-#### Ensure validity of data in each observation
-
-```{r}
-# Doublecheck data format 
-# Problem with state variable
-state_prob <- bus %>%
-  subset(!grepl("[a-zA-Z]{2}", state))
-
-sel <- rev %>%
-  subset((stars %in% c(0,0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)))
-
-```
-
-```{r}
-date_prob <- rev %>%
-  subset(!(date))
-```
-
-```{r}
-is.POSIXct <- function(x) inherits(x, "POSIXct")
-
-is.POSIXct(rev[1]$date)
-
-```
-
-#### Checking for NAs
-We notice that the datasets represent missing values as an empty string "", and below we showcase how many there are for each variable:
-
-```{r}
-# Convert empty strings to NA
-bus <- as.data.frame(lapply(bus, function(x) replace(x,x == "", NA)))
-rev[,2:5] <- as.data.frame(lapply(rev[,2:5], function(x) replace(x, x == "",NA)))
-# Table of NAs
-na_bus <- apply(bus, 2, function(col)round(sum(is.na(col))/length(col),8))
-na_rev <- apply(rev, 2, function(col)round(sum(is.na(col))/length(col),3))
-```
-
-```{r}
-library(kableExtra)
-
-kable(na_bus, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Business)") %>%
-  kable_styling("striped", full_width = F) %>% 
- scroll_box(width = "100%", height = "200px")
-
-kable(na_rev, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Reviews)") %>%
-  kable_styling("striped", full_width = F) %>% 
- scroll_box(width = "100%", height = "200px")
-```
-
-```{r}
-sum(is.na(bus$business_id))
-sum(is.na(bus$name))
-sum(is.na(bus$city))
-sum(is.na(bus$state))
-sum(is.na(bus$latitude))
-sum(is.na(bus$longitude))
-sum(is.na(bus$stars))
-sum(is.na(bus$review_count))
-sum(is.na(bus$is_open))
-```
-
-We notice that there are no missing values in `review`; however, in `business`, 
-```{r, eval=FALSE}
-chs[, father_asthma  := fifelse(is.na(father_asthma), avg_val, father_asthma)]
-sum(is.na(bus))
-sum(is.na(rev))
-```
-
 #### Filtering Observations
+
 Since we are only focusing on restaurant performance, we eliminated non-restaurant business in the `business` dataset and their corresponding reviews, retaining only those that are under the categories "Restaurants" or "Food". The list of categories that Yelp offers can be found [here](https://blog.yelp.com/businesses/yelp_category_list/). 
 
 ```{r}
@@ -151,6 +87,80 @@ mod_dim_rev <- dim(rev)[1]
 
 Originally, we have `r orig_dim_bus` businesses and `r orig_dim_rev` reviews, and after filter we reduced to `r mod_dim_bus` food businesses with `r mod_dim_rev` reviews total. 
 
+#### Ensure validity of data in each observation
+
+```{r}
+# Doublecheck data format 
+state_prob <- bus %>%
+  subset(!grepl("[a-zA-Z]{2}", state))
+
+star_prob_rev <- rev %>%
+  subset(!(stars %in% seq(0, 5, by=0.5)))
+
+star_prob_bus <- bus %>%
+  subset(!(stars %in% seq(0, 5, by=0.5)))
+
+postal_prob <- bus %>%
+  subset(!grepl("[0-9]+", postal_code) & !grepl("[A-Z][0-9][A-Z] [0-9][A-Z][0-9]", postal_code))
+
+coord_prob <- bus %>%
+  subset(!between(latitude, -90, 90) | !between(longitude, -180, 180))
+
+rev_prob <- bus %>%
+  subset(review_count < 0)
+
+is_open_prob <- bus %>%
+  subset(!(is_open %in% c(0,1)))
+
+is.POSIXct <- function(x) inherits(x, "POSIXct")
+date_prob <- rev %>%
+  subset(!is.POSIXct(date))
+```
+
+```{r, eval=FALSE}
+# Check where the problems are
+dim(is_open_prob)[1] 
+dim(rev_prob)[1] 
+dim(coord_prob)[1] 
+dim(postal_prob)[1] 
+dim(star_prob_bus)[1] 
+dim(star_prob_rev)[1] 
+dim(state_prob)[1] 
+dim(date_prob)[1]
+
+# Check what the problem is by looking at the unique values
+unique(postal_prob$postal_code)
+```
+
+Checking potential problems with the data types, we verify that there are `r dim(postal_prob)[1]` problems total, all of which arise from variable `postal_code` with the value "". 
+
+#### Checking for NAs
+
+As previously determined, we notice that the datasets represent missing values as an empty string "", and below we showcase how many there are for each variable after converting "" to take on value `NA`:
+
+```{r}
+# Convert empty strings to NA
+bus <- as.data.frame(lapply(bus, function(x) replace(x,x == "", NA)))
+rev[,2:5] <- as.data.frame(lapply(rev[,2:5], function(x) replace(x, x == "",NA)))
+# Table of NAs
+na_bus <- apply(bus, 2, function(col)round(sum(is.na(col))/length(col),8))
+na_rev <- apply(rev, 2, function(col)round(sum(is.na(col))/length(col),3))
+```
+
+```{r}
+library(kableExtra)
+
+kable(na_bus, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Business)") %>%
+  kable_styling("striped", full_width = F) %>% 
+ scroll_box(width = "100%", height = "200px")
+
+kable(na_rev, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Reviews)") %>%
+  kable_styling("striped", full_width = F) %>% 
+ scroll_box(width = "100%", height = "200px")
+```
+
+We notice that there are no missing values in `review`; however, in `business`, `NA`s are present in the variables `address`, `postal_code`, `attributes`, `categories`, and `hours`. Since these variables are unique to the restaurant and cannot be simply inferred from observations with non-missing values, we will keep them as NAs in the dataset as they may have particular association with other characteristics.
+
 
 In order to extract more information from our dataset, we will generated additional features from existing ones that may be helpful for our data exploration and analysis.
 
@@ -161,22 +171,89 @@ First, we try to identify businesses that opened before and after COVID-19. For 
 find_earliest <- function(bus_id, rev_data){
   all_rev <- rev_data %>% 
     subset(business_id == bus_id)
-  min(all_rev$date)
+  return(min(all_rev$date))
 }
+head(bus)
 ```
 
+
+```{r}
+avg_hours <- c()
+for (hours in bus$hours){
+  hours <- str_remove_all(hours, "[{}]")
+  days <- strsplit(hours, ", ")
+  num_days <- 0
+  total_length <- 0
+  for (day in days){
+    num_days <- num_days + 1
+    # Extracts the first instance for open hours and closing hours of each day
+    open <- as.integer(str_remove(str_extract(day, "[0-9]+(:)"), "[:]"))
+    close <- as.integer(str_remove(str_extract(day, "(-)[0-9]+"), "[-]"))
+    for (i in range(length(close))){
+      if(is.na(close[i]) | is.na(open[i])){
+        total_length <- NA
+        break
+      }
+      if (close[i] > open[i]){
+        length <- sum(length, close[i] - open[i])
+      } else {
+        length <- sum(length, (close[i] + 24) - open[i])
+      }
+      total_length <- sum(total_length, length)
+    }
+    
+  }
+  avg_length <- total_length/num_days
+  avg_hours <- c(avg_hours, avg_length)
+}
+
+length(avg_hours)
+```
+```{r}
+head(bus)
+```
 
 
 ```{r}
 # Binary Pre-COVID (=1), Post-COVID (=0), and Unknown (=2)
 # We use the date of the earliest review for each business
-startDate = as.POSIXct("2020-01-09");
-bus[, pre_covid := fifelse(business_id %in% rev$business_id, fifelse(find_earliest(business_id, rev) <= startDate, 1, 0), 2)]
+startDate = as.POSIXct("2020-01-09")
+bus$pre_covid <- fifelse(bus$business_id %in% rev$business_id, fifelse(find_earliest(bus$business_id, rev) <= startDate, 1, 0), 2)
 
 # Int: length of open hours
 
 
 # Binary: takeout
+vals <- c()
+for (b in bus$attributes){
+  all <- str_remove_all(b, "[{}]")
+  attr <- strsplit(all, ", ")
+  val <- 2
+  for (i in 1:length(attr)){
+    if (grepl('RestaurantsTakeOut', attr[i])){
+      if (grepl('True', attr[i])){
+        val <- 1
+      } else{
+        val <- 0
+      }
+    }
+  }
+  vals <- c(vals, val)
+  
+}
+bus$takeout <- vals
+
+# for (bus in bus$attributes){
+#   all <- str_remove_all(bus, "[{}]")
+#   attr <- strsplit(all, ", ")
+#   # Find takeout
+#   for (i in range(length(attr))){
+#     if ("RestaurantsTakeOut" %in% attr[i]){
+#       val <- str_remove(str_extract(day, "'[TF][a-z]+'"), "[']")
+#       bus[, takeout := fifelse(val == 'True', 1, 0)]
+#     }
+#   }
+# }
 
 # Binary: good for groups
 
@@ -192,8 +269,9 @@ bus[, pre_covid := fifelse(business_id %in% rev$business_id, fifelse(find_earlie
 ```
 
 ```{r}
-head(bus)
+bus
 ```
+
 ```{r}
 sel <- bus %>% subset(business_id == "eEOYSgkmpB90uNA7lDOMRA") %>% select(address)
 sel == ""
