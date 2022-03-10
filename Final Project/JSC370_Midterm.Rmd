@@ -159,6 +159,7 @@ kable(na_rev, col.names = c("Proportion"), caption = "Summary of NA Proportion f
  scroll_box(width = "100%", height = "200px")
 ```
 
+
 We notice that there are no missing values in `review`; however, in `business`, `NA`s are present in the variables `address`, `postal_code`, `attributes`, `categories`, and `hours`. Since these variables are unique to the restaurant and cannot be simply inferred from observations with non-missing values, we will keep them as NAs in the dataset as they may have particular association with other characteristics.
 
 
@@ -167,17 +168,30 @@ In order to extract more information from our dataset, we will generated additio
 First, we try to identify businesses that opened before and after COVID-19. For the purpose of this research, we define the start of the pandemic as January 9th, 2020, which is when WHO reported globally that there has been a [new coronavirus identified](https://www.who.int/emergencies/diseases/novel-coronavirus-2019/interactive-timeline#event-7).
 
 ```{r}
-# function to find earliest review date for business
+# Function to find earliest review date for business
 find_earliest <- function(bus_id, rev_data){
   all_rev <- rev_data %>% 
     subset(business_id == bus_id)
   return(min(all_rev$date))
 }
-head(bus)
+
+# Binary Pre-COVID (=1), Post-COVID (=0), and Unknown (=2)
+# We use the date of the earliest review for each business
+startDate = as.POSIXct("2020-01-09")
+bus$pre_covid <- fifelse(bus$business_id %in% rev$business_id, fifelse(find_earliest(bus$business_id, rev) <= startDate, 1, 0), 2)
 ```
 
+We then add a couple of other variables by extracting information from `attributes` and `hours`, which are dictionaries of restaurant features and open hours respectively. For indicator variables, we assigned the value 2 for unknown because the lack of such information could reveal insights about the restaurant performance as well. At this point, all of the variables we have added are: 
+* `pre_covid`: indicator for if restaurant did (=1) or did not open (=0) before COVID-19, or unknown (=2) based on their first review (int)
+* `avg_hours`: the daily average open hours (float)
+* `takeout`: indicator for if restaurant does (=1) or does not offer (=0) takeout, or unknown (=2) (int)
+* `good_for_groups`: indicator for if restaurant is (=1) or is not (=0) good for groups, or unknown (=2) (int)
+* `outdoors`: indicator for if restaurant does (=1) or does not offer (=0) outdoor seating, or unknown (=2) (int)
+* `delivery`: indicator for if restaurant does (=1) or does not offer (=0) delivery, or unknown (=2) (int)
+* `price_range`: restaurant price range from 1-4 (int)
 
-```{r}
+```{r, warning=FALSE}
+# Float: average length of open hours
 avg_hours <- c()
 for (hours in bus$hours){
   hours <- str_remove_all(hours, "[{}]")
@@ -185,43 +199,25 @@ for (hours in bus$hours){
   num_days <- 0
   total_length <- 0
   for (day in days){
-    num_days <- num_days + 1
-    # Extracts the first instance for open hours and closing hours of each day
-    open <- as.integer(str_remove(str_extract(day, "[0-9]+(:)"), "[:]"))
-    close <- as.integer(str_remove(str_extract(day, "(-)[0-9]+"), "[-]"))
-    for (i in range(length(close))){
-      if(is.na(close[i]) | is.na(open[i])){
-        total_length <- NA
-        break
+    for(d in day){
+      num_days <- num_days + 1
+      # Extracts the first instance for open hours and closing hours of each day
+      open <- as.integer(str_remove(str_extract(d, "[0-9]+(:)"), "[:]"))
+      close <- as.integer(str_remove(str_extract(d, "(-)[0-9]+"), "[-]"))
+      if(is.na(open) | is.na(close)){
+        next
       }
-      if (close[i] > open[i]){
-        length <- sum(length, close[i] - open[i])
+      if (close > open){
+        total_length <- total_length + (close - open)
       } else {
-        length <- sum(length, (close[i] + 24) - open[i])
+        total_length <- total_length + (close + 24 - open)
       }
-      total_length <- sum(total_length, length)
     }
-    
   }
-  avg_length <- total_length/num_days
-  avg_hours <- c(avg_hours, avg_length)
+  avg_hours <- c(avg_hours, total_length/num_days)
 }
-
-length(avg_hours)
-```
-```{r}
-head(bus)
-```
-
-
-```{r}
-# Binary Pre-COVID (=1), Post-COVID (=0), and Unknown (=2)
-# We use the date of the earliest review for each business
-startDate = as.POSIXct("2020-01-09")
-bus$pre_covid <- fifelse(bus$business_id %in% rev$business_id, fifelse(find_earliest(bus$business_id, rev) <= startDate, 1, 0), 2)
-
-# Int: length of open hours
-
+  
+bus$avg_hours <- avg_hours
 
 # Binary: takeout
 vals <- c()
@@ -243,48 +239,87 @@ for (b in bus$attributes){
 }
 bus$takeout <- vals
 
-# for (bus in bus$attributes){
-#   all <- str_remove_all(bus, "[{}]")
-#   attr <- strsplit(all, ", ")
-#   # Find takeout
-#   for (i in range(length(attr))){
-#     if ("RestaurantsTakeOut" %in% attr[i]){
-#       val <- str_remove(str_extract(day, "'[TF][a-z]+'"), "[']")
-#       bus[, takeout := fifelse(val == 'True', 1, 0)]
-#     }
-#   }
-# }
-
 # Binary: good for groups
+vals <- c()
+for (b in bus$attributes){
+  all <- str_remove_all(b, "[{}]")
+  attr <- strsplit(all, ", ")
+  val <- 2
+  for (i in 1:length(attr)){
+    if (grepl('RestaurantsGoodForGroups', attr[i])){
+      if (grepl('True', attr[i])){
+        val <- 1
+      } else{
+        val <- 0
+      }
+    }
+  }
+  vals <- c(vals, val)
+  
+}
+bus$good_for_groups <- vals
 
 # Binary: outdoor seating
+vals <- c()
+for (b in bus$attributes){
+  all <- str_remove_all(b, "[{}]")
+  attr <- strsplit(all, ", ")
+  val <- 2
+  for (i in 1:length(attr)){
+    if (grepl('OutdoorSeating', attr[i])){
+      if (grepl('True', attr[i])){
+        val <- 1
+      } else{
+        val <- 0
+      }
+    }
+  }
+  vals <- c(vals, val)
+  
+}
+bus$outdoors <- vals
 
 # Binary: delivery (false, none, true)
-
-# Categorical: Cuisines, Fast Food, (check what categories there are)
+vals <- c()
+for (b in bus$attributes){
+  all <- str_remove_all(b, "[{}]")
+  attr <- strsplit(all, ", ")
+  val <- 2
+  for (i in 1:length(attr)){
+    if (grepl('RestaurantsDelivery', attr[i])){
+      if (grepl('True', attr[i])){
+        val <- 1
+      } else{
+        val <- 0
+      }
+    }
+  }
+  vals <- c(vals, val)
+  
+}
+bus$delivery <- vals
 
 # Categorical: price range
+vals <- c()
+for (b in bus$attributes){
+  all <- str_remove_all(b, "[{}]")
+  attr <- strsplit(all, ", ")
+  for (i in 1:length(attr)){
+    if (grepl('RestaurantsPriceRange2', attr[i])){
+      val <- as.integer(str_remove_all(str_extract(attr[i], "(: ')[0-5](')"), "[:']"))
+    }
+  }
+  vals <- c(vals, val)
+  
+}
+bus$price_range <- vals
 
 # Multiple visits -> can users only post once?
+# Categorical: Cuisines, Fast Food, (check what categories there are)
 ```
-
-```{r}
-bus
-```
-
-```{r}
-sel <- bus %>% subset(business_id == "eEOYSgkmpB90uNA7lDOMRA") %>% select(address)
-sel == ""
-```
-
-
-```{r}
-for (i in len(rev))
-```
-
 
 ### Tools used 
-Data wrangling were completed with `tidyverse` and `dplyr`. All figures were created with `ggplot2`.
+Data wrangling were completed with `tidyverse` and `dplyr`. All figures were created with `ggplot2`, and maps were created using `leaflet`
 
 * how and where the data were acquired
 * how you cleaned and wrangled the data
@@ -298,6 +333,10 @@ Data wrangling were completed with `tidyverse` and `dplyr`. All figures were cre
 
 ```{r}
 # bar charts
+```
+
+```{r}
+# Distribution of restaurants
 ```
 
 
