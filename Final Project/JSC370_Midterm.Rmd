@@ -327,16 +327,114 @@ Data wrangling were completed with `tidyverse` and `dplyr`. All figures were cre
 
 ## Preliminary Results
 * summary statistics
+
 ```{r}
 # histograms
+# Review Count
+bus %>%
+  ggplot(aes(x=review_count, fill=as.character(is_open))) +
+  geom_histogram() +
+  scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#FBC1C1", "#EA7070")) +
+  theme_minimal() +
+  xlab("Number of Reviews") + 
+  ylab("Frequency") +
+  labs(title="Histogram of Reviews by Open Status") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Avg_hours
+bus %>%
+  ggplot(aes(x=avg_hours, fill=as.character(is_open))) +
+  geom_histogram() +
+  scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#F2A1A1", "#A14747")) +
+  theme_minimal() +
+  xlab("Number of Reviews") + 
+  ylab("Frequency") +
+  labs(title="Histogram of Reviews by Open Status") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
+
+```{r}
+bus %>%
+  ggplot() +
+    aes(x = as.character(is_open), y = review_count) +
+  # Summarize data, fun.data is a function that returns ymin, y, ymax
+    stat_summary(fun.data="mean_sdl", geom="errorbar") +
+    stat_summary(fun.data="mean_sdl") + 
+    xlab("Restaurant Open Status") +
+    ylab("FNumber of Reviews") +
+    labs(title="Box Plot for Review Count by Open Status") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_minimal()
+
+bus %>%
+  ggplot(aes(x=as.character(is_open), y=review_count)) +
+  scale_colour_brewer(palette = "Dark2") +
+  geom_boxplot(aes(color=pre_covid)) +
+  theme_minimal()
+```
+```
+
 
 ```{r}
 # bar charts
+
+# Stars
+bus %>%
+  ggplot(aes(x=stars, fill = as.character(is_open))) +
+  geom_bar() +
+    scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#FBC1C1", "#EA7070")) +
+  theme_minimal() +
+  xlab("Price Range") + 
+  ylab("Frequency") +
+  labs(title="Bar Chart of Restaurant Rating by Open Status") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+```{r}
+# Price_range
+bus %>%
+  ggplot(aes(x=price_range, fill = as.character(is_open))) +
+  geom_bar() +
+    scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#FBC1C1", "#EA7070")) +
+  theme_minimal() +
+  xlab("Price Range") + 
+  ylab("Frequency") +
+  labs(title="Bar Chart of Restaurant Price Range by Open Status") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 ```{r}
+head(rev)
+```
+
+### Multi-variable Relationships
+
+```{r}
+# Takeout & Rating & is_open
+
+# Avg_hours $ Rating
+
+# Price range & Rating
+
+# Review count & Rating & is_open
+
+```
+
+
+### Spatial Relationship: Rating & Location
+
+```{r}
 # Distribution of restaurants
+stars_pal <- colorNumeric(c('#FBC1C1', '#EA7070', '#A14747'), domain = bus$stars[!is.na(bus$stars)], na.color = NA)
+
+bus %>%
+  leaflet() %>%
+  addProviderTiles('OpenStreetMap') %>%
+  addCircles(lat=~latitude, lng=~longitude, color=~stars_pal(stars), label =~paste('Rating', round(stars,2)), opacity = 1, fillOpacity=1, radius=~300) %>%
+  addLegend('bottomleft', pal = stars_pal, values = bus$stars, title = "Rating", opacity=1, na.label=NULL)
 ```
 
 
