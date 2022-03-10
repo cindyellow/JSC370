@@ -1,11 +1,13 @@
 ---
 title: "Lab 9 - HPC"
+author: Shih-Ting (Cindy) Huang
+date: 03/10/2022
 output: html_document
 link-citations: yes
 ---
 
 ```{r setup, echo=FALSE}
-knitr::opts_chunk$set(eval = F)
+knitr::opts_chunk$set(eval = T)
 ```
 
 ```{r, include=T}
@@ -178,16 +180,54 @@ ans0 <- confint(lm(y~x))
 # Our method implemented from scratch
 ans1 <- my_boot(dat = data.frame(x=x,y=y), stat=my_stat, R=R, ncpus=2)
 
-ans0
-ans1
+print(ans0)
+
+# Print the 95% CI for ans1
+print(t(apply(ans1,2,quantile, c(0.025, 0.975))))
 ```
 
 2. Check whether your version actually goes faster than the non-parallel version:
 
 
 ```{r benchmark-problem3}
+# Compare 1 and 2 cpus
+system.time(my_boot(dat=data.frame(x=x,y=y), my_stat, R=4000, ncpus=1L))
 
+system.time(my_boot(dat=data.frame(x=x,y=y), my_stat, R=4000, ncpus=2L))
+
+system.time(my_boot(dat=data.frame(x=x,y=y), my_stat, R=4000, ncpus=8L))
 ```
+* Here, we can see that using more CPUs speeds up the bootstrapping. If we specify a number of CPUs more than is available on our system, R might make decisions to optimize. 
+
+## Foreach and doParallel
+
+```{r}
+fun3 <- function(dat, stat, R){
+  # Sample entire dataset with replacement R times
+  idx <- matrix(sample.int(n, n*R, T), nrow=n, ncol=R)
+  
+  foreach(i = 1:R, .combine=rbind) %do% {
+    # Data subsetted by index
+    stat(dat[idx[,i],,drop=F])
+  }
+}
+
+# Change to parallelized for-loop by changing %do% to %dopar%
+fun3par <- function(dat, stat, R){
+  # Sample entire dataset with replacement R times
+  idx <- matrix(sample.int(n, n*R, T), nrow=n, ncol=R)
+  
+  foreach(i = 1:R, .combine=rbind) %dopar% {
+    # Data subsetted by index
+    stat(dat[idx[,i],,drop=F])
+  }
+}
+
+system.time(fun3(dat = data.frame(x=x,y=y), stat=my_stat, R=4000))
+registerDoParallel(2)
+system.time(fun3par(dat = data.frame(x=x,y=y), stat=my_stat, R=4000))
+```
+
 
 ## Problem 4: Compile this markdown document using Rscript
 
@@ -195,7 +235,7 @@ Once you have saved this Rmd file, try running the following command
 in your terminal:
 
 ```bash
-Rscript --vanilla -e 'rmarkdown::render("[full-path-to-your-Rmd-file.Rmd]")' &
+Rscript --vanilla -e 'rmarkdown::render("~/School/Y3/JSC370/Labs/Lab09/lab09-hpc.Rmd")' 
 ```
 
 Where `[full-path-to-your-Rmd-file.Rmd]` should be replace with the full path to
