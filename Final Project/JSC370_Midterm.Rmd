@@ -2,7 +2,7 @@
 title: "Food Industry During the Pandemic"
 subtitle: "JSC370 Midterm Report"
 author: "Shih-Ting (Cindy) Huang"
-date: "02/27/2022"
+date: "03/10/2022"
 output: 
   html_document:
     theme: lumen
@@ -17,7 +17,7 @@ knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
 
 After the emergence of COVID-19 in early 2020, undoubtedly many businesses were forced to close temporarily or permanently. Throughout this time, restaurants in particular have undergone various modifications, such as disabling dine-in, starting takeout, etc. As a result, the food quality, service quality, and overall dining experience might have changed - whether in a positive or negative way. 
 
-With that in mind, I propose the research question: How has COVID-19 affected restaurant performance and impression?
+With that in mind, I propose the research question: How has COVID-19 affected restaurant performance and impression? Specifically, do restaurants with services that better comply with COVID restrictions necessarily have better reviews?
 
 In order to answer this question, I utilized data from Yelp, one of the biggest platforms that displays information of businesses and enable users to search for, react to, and/or share their opinions of such businesses. Their data come from a total of 6,990,280 reviews and 150,346 businesses from 11 metropolitan areas - Montreal, Calgary, Toronto, Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, Madison, and Cleveland. Only reviews that are [recommended](https://www.yelp-support.com/Recommended_Reviews) by Yelp are included. For privacy reasons, contents of the dataset will not be disclosed.
 
@@ -50,6 +50,7 @@ tibble("Variable Name" = c(colnames(bus)[1], colnames(bus)[2], colnames(bus)[3],
 
 
 Next, we take a look at the `review` dataset:
+
 ```{r}
 tibble("Variable Name" = c(colnames(rev)[2], colnames(rev)[3], colnames(rev)[4], colnames(rev)[5], colnames(rev)[6]),
        Definition = c("22 character unique review id (str)", "22 character unique user id (str)", "22 character business id, maps to those in business dataset (str)", "Star rating (int)", "Date formatted YYYY-MM-DD (str)")) %>%
@@ -149,19 +150,19 @@ na_rev <- apply(rev, 2, function(col)round(sum(is.na(col))/length(col),3))
 
 ```{r}
 library(kableExtra)
-
 kable(na_bus, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Business)") %>%
-  kable_styling("striped", full_width = F) %>% 
- scroll_box(width = "100%", height = "200px")
+  kable_styling("striped", full_width = T, position="center") %>% 
+ scroll_box(width = "50%", height = "200px")
 
 kable(na_rev, col.names = c("Proportion"), caption = "Summary of NA Proportion for All Variables (Yelp Reviews)") %>%
-  kable_styling("striped", full_width = F) %>% 
- scroll_box(width = "100%", height = "200px")
+  kable_styling("striped", full_width = T, position="center") %>% 
+ scroll_box(width = "50%", height = "200px")
 ```
 
 
 We notice that there are no missing values in `review`; however, in `business`, `NA`s are present in the variables `address`, `postal_code`, `attributes`, `categories`, and `hours`. Since these variables are unique to the restaurant and cannot be simply inferred from observations with non-missing values, we will keep them as NAs in the dataset as they may have particular association with other characteristics.
 
+### Feature Engineering
 
 In order to extract more information from our dataset, we will generated additional features from existing ones that may be helpful for our data exploration and analysis.
 
@@ -175,19 +176,21 @@ find_earliest <- function(bus_id, rev_data){
   return(min(all_rev$date))
 }
 
-# Binary Pre-COVID (=1), Post-COVID (=0), and Unknown (=2)
+# Indicator Pre-COVID (=1), Post-COVID (=0), and Unknown (=2)
 # We use the date of the earliest review for each business
 startDate = as.POSIXct("2020-01-09")
 bus$pre_covid <- fifelse(bus$business_id %in% rev$business_id, fifelse(find_earliest(bus$business_id, rev) <= startDate, 1, 0), 2)
 ```
 
 We then add a couple of other variables by extracting information from `attributes` and `hours`, which are dictionaries of restaurant features and open hours respectively. For indicator variables, we assigned the value 2 for unknown because the lack of such information could reveal insights about the restaurant performance as well. At this point, all of the variables we have added are: 
+
 * `pre_covid`: indicator for if restaurant did (=1) or did not open (=0) before COVID-19, or unknown (=2) based on their first review (int)
 * `avg_hours`: the daily average open hours (float)
 * `takeout`: indicator for if restaurant does (=1) or does not offer (=0) takeout, or unknown (=2) (int)
+* `delivery`: indicator for if restaurant does (=1) or does not offer (=0) delivery, or unknown (=2) (int)
+* `takeout_deli`: categorical for if restaurant offers takeout, delivery, both, or neither (chr)
 * `good_for_groups`: indicator for if restaurant is (=1) or is not (=0) good for groups, or unknown (=2) (int)
 * `outdoors`: indicator for if restaurant does (=1) or does not offer (=0) outdoor seating, or unknown (=2) (int)
-* `delivery`: indicator for if restaurant does (=1) or does not offer (=0) delivery, or unknown (=2) (int)
 * `price_range`: restaurant price range from 1-4 (int)
 
 ```{r, warning=FALSE}
@@ -219,7 +222,7 @@ for (hours in bus$hours){
   
 bus$avg_hours <- avg_hours
 
-# Binary: takeout
+# Indicator: takeout
 vals <- c()
 for (b in bus$attributes){
   all <- str_remove_all(b, "[{}]")
@@ -239,7 +242,7 @@ for (b in bus$attributes){
 }
 bus$takeout <- vals
 
-# Binary: good for groups
+# Indicator: good for groups
 vals <- c()
 for (b in bus$attributes){
   all <- str_remove_all(b, "[{}]")
@@ -259,7 +262,7 @@ for (b in bus$attributes){
 }
 bus$good_for_groups <- vals
 
-# Binary: outdoor seating
+# Indicator: outdoor seating
 vals <- c()
 for (b in bus$attributes){
   all <- str_remove_all(b, "[{}]")
@@ -279,7 +282,7 @@ for (b in bus$attributes){
 }
 bus$outdoors <- vals
 
-# Binary: delivery (false, none, true)
+# Indicator: delivery (false, none, true)
 vals <- c()
 for (b in bus$attributes){
   all <- str_remove_all(b, "[{}]")
@@ -314,36 +317,51 @@ for (b in bus$attributes){
 }
 bus$price_range <- vals
 
+# Takeout, Delivery, Both, or Neither
+bus <- data.table(bus)
+bus[, takeout_deli := fifelse(takeout == 1, fifelse(delivery == 1, "Both", "Takeout"),fifelse(delivery==1, "Delivery", "Neither"))]
+
 # Multiple visits -> can users only post once?
 # Categorical: Cuisines, Fast Food, (check what categories there are)
 ```
 
-### Tools used 
-Data wrangling were completed with `tidyverse` and `dplyr`. All figures were created with `ggplot2`, and maps were created using `leaflet`
+In addition to these variables, I would also like to engineer features related to each business's categories on Yelp (ex. Fast Food, Cafe, Bar, etc.) and find a strategy to compare reviews before and after COVID.
 
-* how and where the data were acquired
-* how you cleaned and wrangled the data
-* what tools you used for data exploration
+### Tools used 
+Data wrangling were completed with `tidyverse` and `dplyr`. All figures were created with `ggplot2`, and maps were created using `leaflet`. Tables were created with `kable` and `kableExtra`.
 
 ## Preliminary Results
-* summary statistics
+
+To evaluate restaurant performance, we will mainly be looking at the variables `stars`, `review_count`, and `is_open` to determine the impression of businesses on its visitors. Of course, we cannot obtain the impression of the entire population and only a subset of it that chose to comment on Yelp, so it is possible that these reviews don't represent an accurate image of the restaraunt's performance.
+
+As part of a preliminary exploration, we selected a couple of variables we believe could impact restaurant performance, such as its daily average open hours, number of reviews, price range, takeout & delivery services, and other features such as if it offers outdoors seating, is good for groups, etc.
+
+### Multi-variable Relationships
+
+```{r}
+library(kableExtra)
+# Cast to data table
+bus <- data.table(bus)
+rating_sort <- bus[order(bus$stars, decreasing = FALSE),] 
+tibble(rating_sort[, .(
+  "Avg of Mean Open Length" = round(mean(avg_hours),3),
+  "SD of Avg Open Length" = round(sd(avg_hours),3),
+  "Avg of Review Count" = round(mean(review_count),3),
+  "SD of Review Count" = round(sd(review_count),3),
+  "Is-Open Proportion" = round(sum(is_open)/.N,3),
+  "Is-Open SD" = round(sd(is_open),3)
+), by = stars]) %>%
+  kable(caption = "Summary of Open Length & Status and Review Count by Ratings Category")%>%
+  kable_styling(full_width=T)
+```
+
+In the above summary statistics grouped by the average stars given, we spot that as ratings for the restaurant improves, open hours decrease whereas review count increases. Surprisingly, there is a higher proportion of restaurants with lower ratings that are open. Hence, we examine the pairwise relationships between open status and review count & avg open hours respectively to determine if there is correlation.
 
 ```{r}
 # histograms
 # Review Count
 bus %>%
   ggplot(aes(x=review_count, fill=as.character(is_open))) +
-  geom_histogram() +
-  scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#FBC1C1", "#EA7070")) +
-  theme_minimal() +
-  xlab("Number of Reviews") + 
-  ylab("Frequency") +
-  labs(title="Histogram of Reviews by Open Status") +
-  theme(plot.title = element_text(hjust = 0.5))
-
-# Avg_hours
-bus %>%
-  ggplot(aes(x=avg_hours, fill=as.character(is_open))) +
   geom_histogram() +
   scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#F2A1A1", "#A14747")) +
   theme_minimal() +
@@ -353,76 +371,146 @@ bus %>%
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
+Graphing a histogram of review count stacked by open status, we notice that the distribution is generally right-skewed, with most values near 0 and a few outliers in the 1000s. Due to that, it is visually difficult to conclude if the two variables are related.
+
+```{r}
+# Avg_hours
+bus %>%
+  ggplot(aes(x=avg_hours, fill=as.character(is_open))) +
+  geom_histogram() +
+  scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#F2A1A1", "#A14747")) +
+  theme_minimal() +
+  xlab("Avg Daily Open Hours") + 
+  ylab("Frequency") +
+  labs(title="Histogram of Avg Open Hours by Open Status") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+However, in terms of average daily open hours, among the restaurants that open more than 12 hours a day, there are significantly fewer restaurants that closed. We notice a number of businesses that have 0 open hours in the histogram. Those are the businesses that didn't provide information on their weekly open hours, which could have meaningful implications as well.
+
+
 ```{r}
 bus %>%
-  ggplot() +
-    aes(x = as.character(is_open), y = review_count) +
-  # Summarize data, fun.data is a function that returns ymin, y, ymax
-    stat_summary(fun.data="mean_sdl", geom="errorbar") +
-    stat_summary(fun.data="mean_sdl") + 
-    xlab("Restaurant Open Status") +
-    ylab("FNumber of Reviews") +
-    labs(title="Box Plot for Review Count by Open Status") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    theme_minimal()
-
-bus %>%
-  ggplot(aes(x=as.character(is_open), y=review_count)) +
-  scale_colour_brewer(palette = "Dark2") +
+  ggplot(aes(x=fifelse(is_open == 1, "Open", "Closed"), y=review_count)) +
   geom_boxplot(aes(color=pre_covid)) +
+  xlab("Open Status") +
+  ylab("Review Count") +
+  labs(title="Boxplot for Review Count by Open Status") +
   theme_minimal()
 ```
-```
 
+Here, we verify with the boxplot that we have numerous outliers for review count that may have to be handled prior to model construction.
 
 ```{r}
-# bar charts
-
-# Stars
 bus %>%
+  ggplot(aes(x=fifelse(is_open == 1, "Open", "Closed"), y=avg_hours)) +
+  scale_colour_brewer(palette = "Dark2") +
+  geom_boxplot(aes(color=pre_covid)) +
+  xlab("Open Status") +
+  ylab("Avg Daily Open Hours") +
+  labs(title="Boxplot for Open Hours by Open Status") +
+  theme_minimal()
+```
+
+Here, the median average daily open hours is 1 hour more for restaurants that are still open versus those that closed. The interquartile range is also higher. 
+
+Next, we take a look at some of the relationships between categorical variables and ratings. 
+
+```{r, fig.height=8}
+# Is-Open
+open <- bus %>%
   ggplot(aes(x=stars, fill = as.character(is_open))) +
   geom_bar() +
-    scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#FBC1C1", "#EA7070")) +
+    scale_fill_manual(name = 'Restaurant \nOpen Status', labels = c("Closed", "Open"), values = c("#FAD4D4", "#CF4F4F")) +
   theme_minimal() +
-  xlab("Price Range") + 
+  xlab("Ratings") + 
   ylab("Frequency") +
-  labs(title="Bar Chart of Restaurant Rating by Open Status") +
-  theme(plot.title = element_text(hjust = 0.5))
-```
+  labs(title="By Open Status") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
 
-
-
-
-```{r}
-# Price_range
-bus %>%
-  ggplot(aes(x=price_range, fill = as.character(is_open))) +
+# Pre-Covid
+precov <- bus %>%
+  ggplot(aes(x=stars, fill = as.character(pre_covid))) +
   geom_bar() +
-    scale_fill_manual(name = 'Restaurant Open Status', labels = c("Closed", "Open"), values = c("#FBC1C1", "#EA7070")) +
+    scale_fill_manual(name = 'Opened \nPre-COVID', labels = c("Yes", "Unknown"), values = c("#FAD4D4", "#CF4F4F")) +
   theme_minimal() +
-  xlab("Price Range") + 
+  xlab("Ratings") + 
   ylab("Frequency") +
-  labs(title="Bar Chart of Restaurant Price Range by Open Status") +
-  theme(plot.title = element_text(hjust = 0.5))
+  labs(title="By if Opened Pre-COVID") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+# Good for Groups
+gfg <- bus %>%
+  ggplot(aes(x=stars, fill = as.character(good_for_groups))) +
+  geom_bar() +
+    scale_fill_manual(name = 'Good for \nGroups', labels = c("No", "Yes", "Unknown"), values = c("#FCE3E3", "#F2A1A1", "#A14747")) +
+  theme_minimal() +
+  xlab("Ratings") + 
+  ylab("Frequency") +
+  labs(title="By if Good for Groups") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+# Takeout/Deli
+td <- bus %>%
+  ggplot(aes(x=stars, fill = takeout_deli)) +
+  geom_bar() +
+    scale_fill_manual(name = 'Takeout/Delivery',  values = c("#FCE3E3","#FBC1C1", "#ED8F8F", "#A14747")) +
+  theme_minimal() +
+  xlab("Ratings") + 
+  ylab("Frequency") +
+  labs(title="By Takeout-Delivery Services") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+# Price Range
+pr <- bus %>%
+  ggplot(aes(x=stars, fill = as.character(price_range))) +
+  geom_bar() +
+    scale_fill_manual(name = 'Price Range',  values = c("#FCE3E3","#FBC1C1", "#ED8F8F","#A14747")) +
+  theme_minimal() +
+  xlab("Ratings") + 
+  ylab("Frequency") +
+  labs(title="By Price Range") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+library(cowplot)
+title <- ggdraw() + 
+  draw_label(
+    "Bar Chart of Restaurant Rating \nby Other Indicators",
+    fontface = 'bold',
+    x = 0.5,
+    hjust = 0.5
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_grid(title, open, precov, gfg, td, pr, ncol=2)
 ```
+
+It is visible that a majority of the restaurants in our dataset have 4 stars. Looking at the distribution of ratings stacked by various indicator variables, the most significant relationship we see is that a high proportion of restaurants with rating 4 are good for groups and offer takeout/delivery. The association with open status, surprisingly, reveals that a higher proportion among restaurants with ratings < 3 are still open. Ratings and price range do not have as clear of an effect on each other.
+
+For some time during the past two years, COVID has discouraged/forbidden indoor dining in various places. Hence, this feature could potentially have an impact on how reviewers perceive the business. 
 
 ```{r}
-head(rev)
+# Outdoor Seating
+ind_desc <- tibble(outdoors = 0:2, 
+                   desc = c("No", "Yes", "Unknown"))
+outdoor_desc <- left_join(bus, ind_desc, by="outdoors")
+
+outdoor_desc %>%
+  ggplot(aes(x=stars, fill = as.character(is_open))) +
+  geom_bar() +
+    scale_fill_manual(name = 'Open Status', labels = c("No", "Yes"), values = c("#FCE3E3", "#A14747")) +
+  theme_minimal() +
+  xlab("Ratings") + 
+  ylab("Frequency") +
+  facet_wrap(desc~as.character(outdoors), ncol=1, scales="free_y") +
+  labs(title="Bar Chart of Restaurant Rating \nby Outdoor Seating & Open Status") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
 ```
 
-### Multi-variable Relationships
-
-```{r}
-# Takeout & Rating & is_open
-
-# Avg_hours $ Rating
-
-# Price range & Rating
-
-# Review count & Rating & is_open
-
-```
-
+Looking at ratings by outdoor seating availability and stacked by open status, we observe there are few restaurants that don't offer outdoor seats, out of which around 50% are still open with a rating of at least 3. On the other hand, those that for sure have this feature have a significantly higher proportion of open restaurants across all ratings.
 
 ### Spatial Relationship: Rating & Location
 
@@ -437,22 +525,22 @@ bus %>%
   addLegend('bottomleft', pal = stars_pal, values = bus$stars, title = "Rating", opacity=1, na.label=NULL)
 ```
 
+Mapping out the locations of these restaurants, we note that there is no data for restaurant businesses in Toronto, Montreal, and Madison metropolitan areas. However, there are additions from Baton Rouge (Louisiana), Nashville (Tennessee), Tampa (Florida), Indianapolis (Indiana), Boise (Idaho), and Santa Maria (California). There's no visible trend for ratings in terms of location within each area with the current representation.
 
 ## Conclusion
-* what i found in terms of the question
+From exploratory data analysis, we suspect that restaurants with higher ratings before and after COVID have the following traits:
 
+* Lower price range
+* Provide both takeout & delivery services
+* Provide outdoor seating
+* Not necessarily the longest average daily operating hours
+* Not necessarily good for groups
 
+Moving forward, the hypothesis I would like to test is: "Restaurants with more reviews and features that facilitate operation under COVID restrictions (outdoor seats, takeout/delivery, lower prices) generally have higher ratings and more positive reviews."
 
+From the preliminary results, I believe that a simple linear regression model might not be suitable or sufficient in representing the relationships between variables, which was why they were excluded from this report. First, some of the assumptions to linear regression, such as normality, are likely not satisfied given the skewness of certain variables. Moreover, it seems like some categorical variables have a non-linear relationship with ratings and possibly with review count, so it is worth looking into other model types (i.e. random forest) to account for those. 
 
-```{r, message=FALSE, warning=FALSE, echo=FALSE, eval=FALSE}
-head(bus)
-head(rev)
-```
-```{r}
-rev$Year <- format(rev$date, format="%Y")
-```
-
-
+Another possible direction is to analyze the reviews more through NLP and compare the ones before and after the pandemic. Review content could be highly indicative of the restaurant's performance and offer more insights related to COVID's impact. From that, we may be able to extract other qualities that were not included in the `business` dataset. 
 
 
 
