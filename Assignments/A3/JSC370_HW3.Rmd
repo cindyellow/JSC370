@@ -1,0 +1,12 @@
+---
+title: "JSC370_HW3"
+author: "Shih-Ting (Cindy) Huang"
+date: "03/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
