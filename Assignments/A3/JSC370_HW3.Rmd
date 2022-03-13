@@ -177,6 +177,7 @@ After removing stopwords, we find that the top 5 most frequent tokens are "covid
 pubmed %>%
   unnest_tokens(word, abstract) %>%
   anti_join(stop_words, by = "word") %>%
+  subset(!grepl("[2-9|0][0-8]+", word)) %>%
   group_by(term) %>%
   count(word, sort=T) %>%
   # Choose the top 1
@@ -198,6 +199,7 @@ In the graph above, we see the top token for each search term. It is interesting
 term_top_5 <- pubmed %>%
   unnest_tokens(word, abstract) %>%
   anti_join(stop_words, by = "word") %>%
+  subset(!grepl("[2-9|0][0-8]+", word)) %>%
   group_by(term) %>%
   count(word, sort=T) %>%
   # Choose the top 1
@@ -257,12 +259,23 @@ tokens_bigram_term %>%
   scale_fill_manual(values = c("#384D48", "#C4E7D4", "#C4DACF","#B9C0DA", "#998DA0")) +
   coord_flip() +
   ylab("Frequency") +
-  xlab("Medical Specialty") +
+  xlab("Search Term") +
   labs(title="Bigram Frequency by Search Term") +
   theme_minimal()
 ```
 
 ## Question 3
+
+```{r}
+pubmed %>%
+  unnest_tokens(word, abstract) %>%
+  anti_join(stop_words, by = "word") %>%
+  count(word, term) %>%
+  bind_tf_idf(word, term, n) %>%
+  group_by(term) %>%
+  top_n(5,n) %>%
+  arrange(term, desc(tf_idf))
+```
 
 
 
