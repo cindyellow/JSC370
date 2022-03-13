@@ -6,7 +6,222 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 ```
+
+```{r}
+library(tidytext)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(wordcloud)
+library(kableExtra)
+library(httr)
+library(wesanderson)
+```
+
+# APIs
+
+## Retrieve details
+```{r}
+# Downloading the website
+website <- xml2::read_html("https://pubmed.ncbi.nlm.nih.gov/?term=sars-cov-2+vaccine")
+
+# Finding the counts
+counts <- xml2::xml_find_first(website, "/html/body/main/div[9]/div[2]/div[2]/div[1]/div[1]/span")
+
+# Turning it into text
+counts <- as.character(counts)
+
+# Extracting the data using regex
+stringr::str_extract(counts, "[0-9,]+")
+```
+
+```{r}
+query_ids <- GET(
+  url   = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+  query = list(db='pubmed',
+               term = 'sars-cov-2+vaccine',
+               retmax = 1000)
+)
+
+# Extracting the content of the response of GET
+ids <- httr::content(query_ids)
+```
+
+```{r}
+ids <- as.character(ids)
+
+ids <- stringr::str_extract_all(ids, "<Id>[1-9]+</Id>")[[1]]
+
+ids <- stringr::str_remove_all(ids, "<Id>|</Id>")
+
+length(ids)
+```
+## Download paper details
+```{r}
+publications <- GET(
+  url   = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+  query = list(
+    db="pubmed",
+    id=paste(ids,collapse=","),
+    retmax=250,
+    rettype="abstract"
+    )
+)
+
+publications <- httr::content(publications)
+publications_txt <- as.character(publications)
+```
+
+## Create a Dataset
+```{r}
+pub_char_list <- xml2::xml_children(publications)
+pub_char_list <- sapply(pub_char_list, as.character)
+```
+
+```{r}
+titles <- str_extract(pub_char_list, "<ArticleTitle>(\\n|.)+</ArticleTitle>")
+titles <- str_remove_all(titles, "</?[[:alnum:]]+>")
+table(is.na(titles))
+```
+
+```{r}
+names <- str_extract(pub_char_list, "<>")
+```
+
+```{r}
+dates <- str_extract(pub_char_list, "<ArticleTitle>(\\n|.)+</ArticleTitle>")
+```
+
+```{r}
+abstracts <- str_extract(pub_char_list, "<Abstract>(\\n|.)+</Abstract>")
+# Clean HTML tags
+abstracts <- str_remove_all(abstracts, "</?[[:alnum:]]+>")
+# Clear extra white space and new lines
+abstracts <- str_replace_all(abstracts, "//s+", " ")
+table(is.na(abstracts))
+```
+
+```{r}
+
+
+database <- data.frame(
+  PubMedID = ids,
+  Title = titles,
+  `Journal Name` = names,
+  `Publication Date` = dates,
+  Abstract = abstracts
+)
+database %>%
+  kable %>%
+  kable_styling("striped", full_width = F) %>% 
+ scroll_box(width = "500px", height = "200px")
+```
+
+# Text Mining
+
+## Question 1
+
+```{r}
+pubmed <- read_csv("https://raw.githubusercontent.com/JSC370/jsc370-2022/main/data/text/pubmed.csv")
+```
+
+First, let's take a look at the tokens before removing stop words.
+```{r}
+pubmed %>%
+  select(abstract) %>%
+  # output col is word, input is abstract
+  unnest_tokens(word, abstract) %>%
+  group_by(word) %>%
+  summarise(word_frequency = n()) %>%
+  # arrange by word frequency from most frequent
+  arrange(across(word_frequency, desc)) %>%
+  head(20) %>%
+  
+  ggplot(aes(x = reorder(word, word_frequency), y = word_frequency)) +
+  # stat means use y column values directly instead of counting
+  geom_bar(stat="identity", fill = "#384D48") + coord_flip() +
+  ylab("Frequency") +
+  xlab("Word") +
+  labs(title = "General Word Frequency") +
+  theme_minimal()
+```
+
+The top 5 most common words are, as shown, "the", "of", "and", "in", and "to". These are not very useful for analysis, so next we will see what the most frequent tokens are after removing stop words.
+
+```{r}
+pubmed %>%
+  select(abstract) %>%
+  unnest_tokens(word, abstract) %>%
+  anti_join(stop_words, by="word") %>%
+  group_by(word) %>%
+  summarise(word_frequency = n()) %>%
+  # arrange by word frequency from most frequent
+  arrange(across(word_frequency, desc)) %>%
+  head(20) %>%
+  
+  ggplot(aes(x = reorder(word, word_frequency), y = word_frequency)) +
+  # stat means use y column values directly instead of counting
+  geom_bar(stat="identity", fill = "#C4DACF") + coord_flip() +
+  ylab("Frequency") +
+  xlab("Word") +
+  labs(title = "General Word Frequency (without stopwords)") +
+  theme_minimal()
+```
+
+After removing stopwords, we find that the top 5 most frequent tokens are "covid", "19", "patients", "cancer", and "prostate". 
+
+```{r}
+pubmed %>%
+  unnest_tokens(word, abstract) %>%
+  anti_join(stop_words, by = "word") %>%
+  group_by(term) %>%
+  count(word, sort=T) %>%
+  # Choose the top 1
+  top_n(1,n) %>%
+  
+  ggplot(aes(x=reorder(term, n), y = n, fill=word)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  scale_fill_manual(values = c("#384D48", "#C4E7D4", "#C4DACF","#B9C0DA", "#998DA0")) +
+  ylab("Frequency") +
+  xlab("Search Term") +
+  labs(title = "Word Frequency by Search Term") +
+  theme_minimal()
+```
+
+In the graph above, we see the top token for each search term. It is interesting that for terms "covid", "prostate cancer", "preeclampsia", and "cystic fibrosis", all the tokens are related to the term itself whereas for "meningitis", the most frequent token is "patients".
+
+```{r}
+term_top_5 <- pubmed %>%
+  unnest_tokens(word, abstract) %>%
+  anti_join(stop_words, by = "word") %>%
+  group_by(term) %>%
+  count(word, sort=T) %>%
+  # Choose the top 1
+  top_n(5,n)
+
+# Order by search terms
+term_top_5 <- term_top_5[order(term_top_5$term),]
+
+kable(term_top_5, col.names = c("Search Term", "Token", "Count"), caption = "Top 5 Tokens for Each Search Term") %>%
+  kable_styling("striped", full_width = T, position="center") %>% 
+ scroll_box(width = "100%", height = "500px")
+```
+
+In a table, we then demonstrate the 5 most common tokens for each search term after removing stop words. 
+
+
+
+
+
+
+
+
+
+
+
 
 
