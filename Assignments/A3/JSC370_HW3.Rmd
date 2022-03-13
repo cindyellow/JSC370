@@ -213,10 +213,56 @@ kable(term_top_5, col.names = c("Search Term", "Token", "Count"), caption = "Top
 
 In a table, we then demonstrate the 5 most common tokens for each search term after removing stop words. 
 
+## Question 2
+For bigrams, we have chosen to remove those that contains numbers other than "19", which is a contextually important number for COVID-19.
 
+```{r}
+tokens_bigram <- pubmed %>%
+  select(abstract) %>%
+  unnest_tokens(bigram, abstract, token="ngrams", n=2) %>%
+  group_by(bigram) %>%
+  summarise(bigram_frequency = n()) %>%
+  separate(bigram, c("word1", "word2"), extra="drop", remove=F, sep = " ", fill = "right") %>%
+  # do on word1 and  word2 separately, "wordx" is the col name in tokens, "word" is the col name in stop_Words
+  anti_join(stop_words, by = c("word1"= "word")) %>%
+  anti_join(stop_words, by = c("word2"="word")) %>%
+  subset(!grepl("[2-9|0][0-8]+", bigram)) %>%
+  arrange(across(bigram_frequency, desc))
 
+tokens_bigram %>%
+  head(10) %>%
+  ggplot(aes(x=reorder(bigram, bigram_frequency), y=bigram_frequency)) +
+  geom_bar(stat="identity", fill = "#B9C0DA") + 
+  xlab("Frequency") +
+  ylab("Bigram") +
+  theme_minimal()+
+  coord_flip() +
+  labs(title = "Bigram Frequency")
+```
 
+```{r}
+tokens_bigram_term <- pubmed %>%
+  unnest_tokens(bigram, abstract, token="ngrams", n=2) %>%
+  separate(bigram, c("word1", "word2"), extra="drop", remove=F, sep = " ", fill = "right") %>%
+  anti_join(stop_words, by = c("word1"= "word")) %>%
+  anti_join(stop_words, by = c("word2"="word")) %>%
+  subset(!grepl("[2-9|0][0-8]+", bigram)) %>%
+  group_by(term) %>%
+  count(bigram, sort=T) %>%
+  top_n(1,n)
 
+tokens_bigram_term %>%
+  ggplot(aes(x=reorder(term, n), y = n, fill = bigram)) +
+  geom_bar(stat="identity") +
+  scale_fill_manual(values = c("#384D48", "#C4E7D4", "#C4DACF","#B9C0DA", "#998DA0")) +
+  coord_flip() +
+  ylab("Frequency") +
+  xlab("Medical Specialty") +
+  labs(title="Bigram Frequency by Search Term") +
+  theme_minimal()
+```
+
+## Question 3
 
 
 
