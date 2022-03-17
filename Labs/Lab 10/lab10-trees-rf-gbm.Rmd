@@ -1,0 +1,236 @@
+---
+title: "Lab 10 - Trees, Bagging, Random Forest"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(eval = F, include  = T)
+```
+
+# Learning goals
+
+- Perform classification and regression with tree-based methods in R
+- Recognize that tree-based methods are capable of capturing non-linearities by splitting multiple times on the same variables
+- Compare the performance of classification trees, bagging,and random forests for predicting heart disease based on the ``heart`` data.
+
+# Lab description
+
+For this lab we will be working with simulated data and the `heart` dataset that you can download from [here](https://github.com/JSC370/jsc370-2022/blob/main/data/heart/heart.csv)
+
+
+### Setup packages
+
+You should install and load `rpart` (trees), `randomForest` (random forest), `gbm` (gradient boosting) and `xgboost` (extreme gradient boosting).
+
+
+```{r, eval=FALSE, warning=FALSE}
+install.packages(c("rpart","randomForest","gbm","xgboost"))
+```
+
+### Load packages and data
+```{r, warning=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+library(xgboost)
+
+heart<-read.csv("https://raw.githubusercontent.com/JSC370/jsc370-2022/main/data/heart/heart.csv")
+
+head(heart)
+```
+
+
+---
+
+## Question 1: Trees with simulated data
+
+- Simulate data from a random uniform distribution [-5,5] and normally distributed errors (s.d = 0.5)
+- Create a non-linear relationship y=sin(x)+error
+- Split the data into test and training sets (500 points each), plot the data
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE}
+set.seed(01)
+n <- 1000
+x <- runif(n, -5, 5)
+error <- rnorm(n, sd=0.5)
+y <- sin(x) + error
+nonlin <- data.frame(y=y, x=x)
+
+# Split into 50% train and 50% test
+train_size <- sample(1:1000, size = 500)
+nonlin_train <- nonlin[train_size,]
+nonlin_test <- nonlin[-train_size,]
+
+ggplot(nonlin_train, aes(x=x, y=y)) + 
+  geom_point() + 
+  theme_minimal()
+```
+
+- Fit a regression tree using the training set, plot it
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE}
+# ANOVA assumes that errors are normally distributed
+# control lets us pass in hyperparameters for trees
+treefit <- rpart(y ~ x, method="anova", control = list(cp=0), data=nonlin_train)
+
+# Length of each branch is measure of how much it reduces RSS
+rpart.plot(treefit)
+```
+
+- Determine the optimal complexity parameter (cp) to prune the tree
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE}
+plotcp(treefit)
+
+printcp(treefit)
+
+# Obtained from the split with minimum x error
+optimalcp <- 0.00431235
+```
+
+- Prune and plot the tree and summarize
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE}
+treepruned <- prune(treefit, cp=optimalcp)
+
+summary(treepruned)
+```
+
+- Based on the plot and/or summary of the pruned tree create a vector of the (ordered) split points for variable x, and a vector of fitted values for the intervals determined by the split points of x.
+
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+# index = the value of x that it is split on
+x_splits <- sort(treepruned$splits[,'index'])
+
+y_splits <- treepruned$frame[which(treepruned$frame[,'var'] == '<leaf>'), 'yval']
+
+```
+- plot the step function corresponding to the fitted (pruned) tree
+```{r, eval=FALSE, echo=FALSE, warning=FALSE}
+plot(y~x, data=nonlin_train)
+plot(stepfun(x_splits, y_splits), add=T, col='red')
+```
+
+- Fit a linear model to the training data and plot the regression line. 
+- Contrast the quality of the fit of the tree model vs. linear regression by inspection of the plot
+- Compute the test MSE of the pruned tree and the linear regression model
+
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+lmfit <- lm(y~x, data=nonlin_train)
+summary(lmfit)
+
+plot(y~x)
+abline(lmfit, col="blue")
+plot(stepfun(x_splits, y_splits), add=T, col="red")
+
+tree_pred <- predict(treepruned, nonlin_test)
+
+nonlin_test_tree <- cbind(nonlin_test, tree_pred)
+
+tree_mse <- sum((nonlin_test_tree$tree_pred - nonlin_test_tree$y)^2)/dim(nonlin_test_tree)[1]
+
+lm_pred <- predict(lmfit, nonlin_test)
+nonlin_test_lm <- cbind(nonlin_test, lm_pred)
+lm_mse <- sum((nonlin_test_lm$lm_pred - nonlin_test_lm$y)^2)/500
+```
+- Is the lm or regression tree better at fitting a non-linear function?
+
+---
+
+## Question 2: Analysis of Real Data
+
+- Split the `heart` data into training and testing (70-30%)
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+set.seed(02)
+train_idx <- sample(1:nrow(heart), round(0.7 * nrow(heart)))
+train <- heart[train_idx,]
+test <- heart[-train_idx,]
+```
+
+- Fit a classification tree using rpart, plot the full tree
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+# xval is the number of cross validation folds
+heart_tree <- rpart(AHD ~ ., data=train, method="class", control = list(minsplit=10, minbucket=3, cp=0, xval=10))
+
+rpart.plot(heart_tree)
+```
+
+- Plot the complexity parameter table for an rpart fit and prune the tree
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+plotcp(heart_tree)
+printcp(heart_tree)
+
+optimalcp <- heart_tree$cptable[which.min(heart_tree$cptable[, "xerror"]), 'CP']
+
+heart_tree_prune <- prune(heart_tree, cp=optimalcp)
+
+rpart.plot(heart_tree_prune)
+```
+
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+# Output probability of each class
+heart_pred <- predict(heart_tree_prune, test)
+heart_pred <- as.data.frame(heart_pred)
+heart_pred$AHD <- ifelse(heart_pred$Yes > 0.5, "Yes", "No")
+
+confmatrix_table <- table(true = test$AHD, predicted = heart_pred$AHD)
+```
+
+- Compute the test misclassification error
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+# FP + FN
+misclass_err <- (confmatrix_table[1,2] + confmatrix_table[2,1])/nrow(test)
+```
+
+- Fit the tree with the optimal complexity parameter to the full data (training + testing)
+```{r,echo=FALSE, eval=FALSE, warning=FALSE}
+heart_tree <- rpart(AHD ~ ., data = heart, method = "class", control = list(cp = optimalcp))
+plotcp(heart_tree)
+```
+ - Out of Bag (OOB) error for tree
+ 
+```{r,echo=FALSE, eval=FALSE, warning=FALSE}
+heart_tree$cptable
+
+min(heart_tree$cptable[,'xerror']) * nrow(heart)
+```
+
+---
+
+## Question 3: Bagging, Random Forest
+
+- Use the training and testing sets from above. Train each of the models on the training data and extract the cross-validation (or out-of-bag error for bagging and Random forest). 
+- For bagging use ``randomForest`` with ``mtry`` equal to the number of features (all other parameters at their default values). Generate the variable importance plot using ``varImpPlot`` and extract variable importance from the ``randomForest`` fitted object using the ``importance`` function.
+
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+# mtry is the number of variables randomly sampled
+# Fits 500 trees on default
+heart_bag <- randomForest(as.factor(AHD)~., data=train, mtry=13, na.action=na.omit)
+
+# Take note if you're equally right across all populations
+# Calculate OOB error
+sum(heart_bag$err.rate[,1])
+
+varImpPlot(heart_bag, n.var=13, col="red")
+```
+
+- For random forests use ``randomForest`` with the default parameters. Generate the variable importance plot using ``varImpPlot`` and extract variable importance from the ``randomForest`` fitted object using the ``importance`` function.
+
+```{r, echo=FALSE, eval=FALSE, warning=FALSE}
+# Subsetting variables
+heart_rf <- randomForest(as.factor(AHD)~., data=train, na.action=na.omit)
+
+sum(heart_rf$err.rate[,1])
+
+varImpPlot(heart_rf, n.var=13, col="green")
+importance(heart_rf)
+```
+
+---
+
+
+# Deliverables
+
+1. Questions 1-3 answered, pdf or html output uploaded to quercus
