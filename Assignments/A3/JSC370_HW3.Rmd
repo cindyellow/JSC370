@@ -1,7 +1,7 @@
 ---
 title: "JSC370_HW3"
 author: "Shih-Ting (Cindy) Huang"
-date: "03/11/2022"
+date: "03/17/2022"
 output: html_document
 ---
 
@@ -18,7 +18,7 @@ library(ggplot2)
 library(wordcloud)
 library(kableExtra)
 library(httr)
-library(wesanderson)
+library(stringr)
 ```
 
 # APIs
@@ -35,8 +35,10 @@ counts <- xml2::xml_find_first(website, "/html/body/main/div[9]/div[2]/div[2]/di
 counts <- as.character(counts)
 
 # Extracting the data using regex
-stringr::str_extract(counts, "[0-9,]+")
+total_count <- str_extract(counts, "[0-9,]+")
 ```
+
+By extracting with the assistance of NCBI API, we discover that there are a total of `r total_count` papers under the search term "sars-cov-2 vaccine". We then proceed to find the details of these papers.
 
 ```{r}
 query_ids <- GET(
@@ -53,29 +55,45 @@ ids <- httr::content(query_ids)
 ```{r}
 ids <- as.character(ids)
 
-ids <- stringr::str_extract_all(ids, "<Id>[1-9]+</Id>")[[1]]
+ids <- str_extract_all(ids, "<Id>[0-9]+</Id>")[[1]]
 
-ids <- stringr::str_remove_all(ids, "<Id>|</Id>")
+ids <- str_remove_all(ids, "<Id>|</Id>")
 
-length(ids)
+ids<-head(ids, 250)
 ```
+
 ## Download paper details
-```{r}
+
+After retrieving the ids of aforementioned papers in Pubmed, we download the details of the first 250 papers. 
+
+```{r, echo=TRUE}
 publications <- GET(
   url   = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
-  query = list(
-    db="pubmed",
-    id=paste(ids,collapse=","),
-    retmax=250,
-    rettype="abstract"
-    )
+  query = list(db='pubmed',
+               id=paste(ids,collapse=","),
+               retmax = 250,
+               rettype="abstract"
+               )
 )
+```
 
+```{r}
 publications <- httr::content(publications)
 publications_txt <- as.character(publications)
 ```
 
 ## Create a Dataset
+
+For each paper, we extracted the following details:
+
+* Pubmed ID Number
+* Title of the paper
+* Name of the journal that published it
+* Publication date
+* Abstract
+
+If a specific information isn't available, it is represented by `NA` in the dataset.
+
 ```{r}
 pub_char_list <- xml2::xml_children(publications)
 pub_char_list <- sapply(pub_char_list, as.character)
@@ -84,40 +102,52 @@ pub_char_list <- sapply(pub_char_list, as.character)
 ```{r}
 titles <- str_extract(pub_char_list, "<ArticleTitle>(\\n|.)+</ArticleTitle>")
 titles <- str_remove_all(titles, "</?[[:alnum:]]+>")
-table(is.na(titles))
 ```
 
 ```{r}
-names <- str_extract(pub_char_list, "<>")
+names <- str_extract(pub_char_list, "<Journal>(\\n|.)+</Journal>")
+names <- str_extract(names, "<Title>(\\n|.)+</Title>")
+names <- str_remove_all(names, "</?[[:alnum:]]+>")
 ```
 
 ```{r}
-dates <- str_extract(pub_char_list, "<ArticleTitle>(\\n|.)+</ArticleTitle>")
+dates <- str_extract(pub_char_list, "<Journal>(\\n|.)+</Journal>")
+dates <- str_extract(dates, "<PubDate>(\\n|.)+</PubDate>")
+year <- str_extract(dates, "<Year>(\\n|.)+</Year>")
+year <- str_remove_all(year, "</?[[:alnum:]]+>")
+month <- str_extract(dates, "<Month>(\\n|.)+</Month>")
+month <- str_remove_all(month, "</?[[:alnum:]]+>")
+day <- str_extract(dates, "<Day>(\\n|.)+</Day>")
+day <- str_remove_all(day, "</?[[:alnum:]]+>")
+
+pub_date <- paste(year, month, day, sep=" ")
+pub_date <- str_remove_all(pub_date, "NA")
+pub_date <- trimws(pub_date)
+pub_date <- str_replace(pub_date, "^$", replacement = NA_character_)
 ```
 
 ```{r}
 abstracts <- str_extract(pub_char_list, "<Abstract>(\\n|.)+</Abstract>")
 # Clean HTML tags
 abstracts <- str_remove_all(abstracts, "</?[[:alnum:]]+>")
+# Remove the Abstract section labels
+abstracts <- str_remove_all(abstracts, "<AbstractText .*>")
 # Clear extra white space and new lines
 abstracts <- str_replace_all(abstracts, "//s+", " ")
-table(is.na(abstracts))
 ```
 
 ```{r}
-
-
 database <- data.frame(
   PubMedID = ids,
   Title = titles,
-  `Journal Name` = names,
-  `Publication Date` = dates,
+  "Journal Name" = names,
+  "Publication Date" = pub_date,
   Abstract = abstracts
 )
 database %>%
   kable %>%
   kable_styling("striped", full_width = F) %>% 
- scroll_box(width = "500px", height = "200px")
+ scroll_box(width = "100%", height = "500px")
 ```
 
 # Text Mining
@@ -129,6 +159,7 @@ pubmed <- read_csv("https://raw.githubusercontent.com/JSC370/jsc370-2022/main/da
 ```
 
 First, let's take a look at the tokens before removing stop words.
+
 ```{r}
 pubmed %>%
   select(abstract) %>%
@@ -149,7 +180,7 @@ pubmed %>%
   theme_minimal()
 ```
 
-The top 5 most common words are, as shown, "the", "of", "and", "in", and "to". These are not very useful for analysis, so next we will see what the most frequent tokens are after removing stop words.
+The top 5 most common words are, as shown, "the", "of", "and", "in", and "to", which is expected. However, these are not very useful for analysis, so next we will see what the most frequent tokens are after removing stop words.
 
 ```{r}
 pubmed %>%
@@ -167,11 +198,11 @@ pubmed %>%
   geom_bar(stat="identity", fill = "#C4DACF") + coord_flip() +
   ylab("Frequency") +
   xlab("Word") +
-  labs(title = "General Word Frequency (without stopwords)") +
+  labs(title = "General Word Frequency (without stop words)") +
   theme_minimal()
 ```
 
-After removing stopwords, we find that the top 5 most frequent tokens are "covid", "19", "patients", "cancer", and "prostate". 
+After removing stop words, we find that the top 5 most frequent tokens are "covid", "19", "patients", "cancer", and "prostate". 
 
 ```{r}
 pubmed %>%
@@ -213,9 +244,11 @@ kable(term_top_5, col.names = c("Search Term", "Token", "Count"), caption = "Top
  scroll_box(width = "100%", height = "500px")
 ```
 
+
 In a table, we then demonstrate the 5 most common tokens for each search term after removing stop words. 
 
 ## Question 2
+
 For bigrams, we have chosen to remove those that contains numbers other than "19", which is a contextually important number for COVID-19.
 
 ```{r}
@@ -225,7 +258,7 @@ tokens_bigram <- pubmed %>%
   group_by(bigram) %>%
   summarise(bigram_frequency = n()) %>%
   separate(bigram, c("word1", "word2"), extra="drop", remove=F, sep = " ", fill = "right") %>%
-  # do on word1 and  word2 separately, "wordx" is the col name in tokens, "word" is the col name in stop_Words
+  # do on word1 and  word2 separately, "wordx" is the col name in tokens, "word" is the col name in stop_words
   anti_join(stop_words, by = c("word1"= "word")) %>%
   anti_join(stop_words, by = c("word2"="word")) %>%
   subset(!grepl("[2-9|0][0-8]+", bigram)) %>%
@@ -241,6 +274,8 @@ tokens_bigram %>%
   coord_flip() +
   labs(title = "Bigram Frequency")
 ```
+
+Demonstrated above are the top 10 most common bigrams among the abstracts. We see that results related to COVID-19 occupy 7 of the top 10, demonstrating the significance of this topic and its prominence in the dataset.
 
 ```{r}
 tokens_bigram_term <- pubmed %>%
@@ -264,10 +299,12 @@ tokens_bigram_term %>%
   theme_minimal()
 ```
 
+We also take a look at the most common bigram for each search term, finding that they all correspond to the search term except "cerebrospinal fluid" for search term "meningitis".
+
 ## Question 3
 
 ```{r}
-pubmed %>%
+tfidf_top_5 <- pubmed %>%
   unnest_tokens(word, abstract) %>%
   anti_join(stop_words, by = "word") %>%
   count(word, term) %>%
@@ -275,9 +312,14 @@ pubmed %>%
   group_by(term) %>%
   top_n(5,n) %>%
   arrange(term, desc(tf_idf))
+
+kable(tfidf_top_5, col.names = c("Word", "Search Term", "Number of Observations", "TF", "IDF", "TF_IDF"), caption = "Top 5 Tokens with Highest TF-IDF by Search Term") %>%
+  kable_styling("striped", full_width = T, position="center") %>% 
+ scroll_box(width = "100%", height = "500px")
 ```
 
 
+For all the search terms, the same words appear in the top 5 here as in Q1. However, we can spot several differences from the former results. For example, in the search term "covid", the word "pandemic" has become more important despite its relatively lower count. Similar changes in word importance occurred for other search terms, with the more professional/medical terms gaining more importance and receiving a higher TF-IDF score.
 
 
 
