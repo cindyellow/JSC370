@@ -1,10 +1,12 @@
 ---
 title: "Lab 10b - Boosting"
+author: Shih-Ting (Cindy) Huang
+date: 03/24/2022
 output: html_document
 ---
 
 ```{r setup}
-knitr::opts_chunk$set(eval = T, include  = T)
+knitr::opts_chunk$set(eval = T, include  = T, warning=F, message=F)
 ```
 
 # Learning goals
@@ -106,7 +108,7 @@ mean((yhat2_boost-heart[test,"AHD_num"])^2)
 ## Question 2: Extreme Gradient Boosting
 Training an xgboost model with `xgboost` and perform a grid search for tuning the number of trees and the maxium depth of the tree. Also perform 10-fold cross-validation and determine the variable importance. Finally, compute the test MSE.
 
-```{r}
+```{r, warning=FALSE, message=FALSE, include=FALSE}
 # Using caret because it enables us to use grid search on XGBoost
 train_control = trainControl(method="cv", number=10, search="grid")
 
