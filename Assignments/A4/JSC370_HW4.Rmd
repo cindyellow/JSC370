@@ -17,6 +17,7 @@ library(randomForest)
 library(gbm)
 library(xgboost)
 library(caret)
+library(parallel)
 ```
 
 # HPC
@@ -57,21 +58,41 @@ fun2alt <- function(mat){
 
 ```{r}
 # Use the data with this code
-set.seed(250)
+set.seed(2315)
 dat <- matrix(rnorm(200*10), nrow=200)
 
 # Test for the first
-microbenchmark::microbenchmark(
+test1 <- microbenchmark::microbenchmark(
   fun1(dat),
-  fun1alt(dat), check="equivalent"
+  fun1alt(dat), unit="microseconds", check="equivalent"
 )
 
+test1_df <- data.frame(summary(test1))
+
 # Test for the second
-microbenchmark::microbenchmark(
+test2 <- microbenchmark::microbenchmark(
   fun2(dat),
-  fun2alt(dat), check="equivalent"
+  fun2alt(dat), unit="microseconds", check="equivalent"
 )
+
+test2_df <- data.frame(summary(test2))
 ```
+
+Using microbenchmark to compare the runtime of the variation of the two functions, we find that `fun1` on average takes`r 100 * test1_df$mean[1]/test1_df$mean[2]`% more time than `fun1alt`. For function 2, `fun2` is on average `r 100 * test2_df$mean[1]/test2_df$mean[2]`% slower than `fun2alt`. Below is a full table of the runtime performance comparison with the unit microseconds.
+
+```{r}
+tibble("Function Name" = c(test1_df$expr[1], test1_df$expr[2], 
+                           test2_df$expr[1], test2_df$expr[2]),
+       "Mean Runtime" = c(test1_df$mean[1], test1_df$mean[2], 
+                          test2_df$mean[1], test2_df$mean[2]),
+       "Median Runtime" = c(test1_df$median[1], test1_df$median[2], 
+                            test2_df$median[1], test2_df$median[2]),
+       "Times Evaluated" = c(test1_df$neval[1], test1_df$neval[2],
+                             test2_df$neval[1], test2_df$neval[2])
+       ) %>%
+  knitr::kable(caption = "Runtime comparison for functions 1 & 2 with their alternatives")
+```
+
 
 ## Problem 2
 ```{r}
@@ -93,18 +114,31 @@ system.time({
 ```
 
 ```{r}
-# MY CODE HERE
 system.time({
-  # MY CODE HERE
-  ans <- # MY CODE HERE
+  cl <- makePSOCKcluster(4L)
+  clusterExport(cl, varlist = c("n"), envir = environment())
+  clusterSetRNGStream(cl, 370)
+  ans <- unlist(parLapply(cl, 1:4000, sim_pi, n=10000))
   print(mean(ans))
-  # MY CODE HERE
+  stopCluster(cl)
 })
 ```
 
+By using parallel computing, we have reduced runtime by `r (2.1 - 1.89)*100/2.1`%. 
+
 # ML
+
+In the following steps, we will be examining the `hitters` dataset, which details information for 332 major league baseball players. We will compare the models' performance for predicting players' salaries based on provided features. NA observations are ommitted because we won't be able to calculate MSEs otherwise.
+
+After separating the dataset into 70% training and 30% test set, we proceed with fitting different models.
 ```{r}
 hitters <-read.csv("https://raw.githubusercontent.com/JSC370/jsc370-2022/main/data/hitters/hitters.csv")
+hitters <-na.omit(hitters)
+# Convert categorical variables to factors, making the dataset comptaible with our boosting model 
+
+hitters$Division <- as.factor(hitters$Division)
+hitters$League <- as.factor(hitters$League)
+hitters$NewLeague <- as.factor(hitters$NewLeague)
 
 set.seed(69)
 # Separate into 70% training 30% testing set
@@ -112,66 +146,83 @@ train = sample(1:nrow(hitters), floor(nrow(hitters) * 0.7))
 test = setdiff(1:nrow(hitters), train)
 ```
 
-```{r}
-head(hitters)
-```
 
 ## Step 1: Regression Tree
+
+First, we fit a regression tree with the response variable `Salary` using the ANOVA method. The tree below shows the predicted value for eacch node as well as the percentage of the observations in the node. 
+
 ```{r}
+set.seed(10)
 hitter_tree <- rpart(Salary ~ ., data=hitters[train,], method="anova")
 rpart.plot(hitter_tree)
 ```
+We then try to find the optimal cost complexity value for pruning the fitted tree by choosing the one with the lowest cross-validation error on the training set. 
 
 ```{r}
 plotcp(hitter_tree)
-printcp(hitter_tree)
-
 optimalcp <- hitter_tree$cptable[which.min(hitter_tree$cptable[, "xerror"]), 'CP']
+```
 
+For this tree, the optimal CP value is `optimalcp`.
+
+```{r, eval=FALSE}
+printcp(hitter_tree)
+```
+
+Using the optimal CP, we pruned the tree to get the following new regression tree. 
+
+```{r}
 hitter_tree_prune <- prune(hitter_tree, cp=optimalcp)
 
 rpart.plot(hitter_tree_prune)
 ```
+
 ## Step 2: Bagging
+
+Next, we attempt to predict `Salary` with bagging, from which we can get a plot showing the importance of each variable. 
+
 ```{r}
+set.seed(20)
 hitter_bag <- randomForest(Salary~., data=hitters[train,], mtry=19, na.action=na.omit)
 
-sum(hitter_bag$err.rate[,1])
+# sum(hitter_bag$err.rate[,1])
 
-varImpPlot(hitter_bag, n.var=19, col="red")
+varImpPlot(hitter_bag, n.var=19, col="#66717E")
 ```
+
+The x-axis `IncNodePurity` measures how much each variable has contributed to decreasing node impurity. The top 5 principal variables are: 
+
+- `CRBI`: Number of runs batted in during their career
+- `CRuns`: Number of runs during their career
+- `Walks`: Number of walks in 1986
+- `CHits`: Number of hits during their career
+- `RBI`: Number of runs batted in 1986
 
 ## Step 3: Random Forest
+
+Fitting a random forest, our top 5 important variables are not too different from when we performed bagging. 
 ```{r}
+set.seed(30)
 hitter_rf <- randomForest(Salary~., data=hitters[train,], na.action=na.omit)
-
-sum(hitter_rf$err.rate[,1])
-
-varImpPlot(hitter_rf, n.var=19, col="green")
-importance(hitter_rf)
 ```
 
 ```{r}
-head(hitters)
-sum(is.na(hitters))
+varImpPlot(hitter_rf, n.var=19, col="#383B53")
+# importance(hitter_rf)
 ```
+
+`CRBI` and `CRuns` are still the top 2. While `CHits` and `Walks` switched places, `RBI` is no longer among the top 5 and has been replaced by `CAtBat`, which is the number of times at bat during the player's career.
+
 
 ## Step 4: Boosting
+
+Next, we perform boosting with 1,000 trees on a range of shrinkage parameter ($\lambda$) values. Here, I have tried 9 values for $\lambda$: 0.0001, 0.001, 0.0025, 0.01, 0.1, 0.3, 0.5, 1, 1.5. 
+
 ```{r}
-# Omit NA values
-hitters <-read.csv("https://raw.githubusercontent.com/JSC370/jsc370-2022/main/data/hitters/hitters.csv")
-set.seed(1060)
-hitters <-na.omit(hitters)
-hitters$Division <- as.factor(hitters$Division)
-hitters$League <- as.factor(hitters$League)
-hitters$NewLeague <- as.factor(hitters$NewLeague)
-
-train = sample(1:nrow(hitters), floor(nrow(hitters) * 0.7))
-test = setdiff(1:nrow(hitters), train)
-
-# Use gaussian loss function to minimize squared error
 lambdas <- c(0.0001, 0.001, 0.0025, 0.01, 0.1, 0.3, 0.5, 1, 1.5)
 mses <- NULL
+
+# Use Gaussian loss function to minimize squared error
 for (lambda in lambdas){
    hitter_boost = gbm(Salary~., data = hitters[train,], distribution="gaussian", n.trees=5000, shrinkage=lambda)
   
@@ -179,19 +230,29 @@ for (lambda in lambdas){
   
   mses <- rbind(mses, mean((yhat_boost-hitters[train,"Salary"])^2))
 }
-plot(lambdas, mses)
+plot(lambdas, mses, xlab="Shrinkage Parameter", ylab="MSE")
 ```
 
-Using the model with the best shrinkage parameter on the training set ($\lambda = 1$), we construct the variable importance plot. 
+From the graph of $\lambda$ versus MSE, we see that the best value is $\lambda = 1$. Using the model with the best shrinkage parameter on the training set, we construct its variable importance table and plot. 
 
 ```{r}
+set.seed(40)
 hitter_boost = gbm(Salary~., data = hitters[train,], distribution="gaussian", n.trees=5000, shrinkage=1)
 
 summary(hitter_boost)
 ```
 
+The method used here is relative influence, which is likely the average reduction of a given metric (ex. MSE) across the base learners (trees) for each variable respectively. From the table, we notice that `CRBI` and `Walks` are again among the most significant predictors. However, GBM's other choices differ, as `PutOuts`,  `AtBat`, and `HmRun` have appeared in the top 5 for the first time. They represent the following:
+
+- `PutOuts`: Number of put outs in 1986
+- `AtBat`: Number of times at bat in 1986
+- `HmRun`: Number of home runs in 1986
+
 ## Step 5: XGBoost
+
+Our last model is XGBoost, which has historically yielded promising results. To attain the best results, we will perform a grid search on some of its parameters (`max_depth`, `nrounds`, and `eta`) to find the optimal set of parameters. 
 ```{r}
+set.seed(50)
 # Using caret because it enables us to use grid search on XGBoost
 train_control = trainControl(method="cv", number=10, search="grid")
 
@@ -200,27 +261,72 @@ tune_grid <- expand.grid(max_depth=c(1,3,5,7),
                          nrounds=(1:10) * 50,
                          eta=c(0.01,0.1,0.3),
                          gamma=0, # minimum amount of reduction
-                         subsample=c(1,5,10,20),
-                         min_child_weight=c(1,5,10),
-                         colsample_bytree = c(0.6, 0.8, 1.0) # number of columns that get subsampled
+                         subsample=1,
+                         min_child_weight=1,
+                         colsample_bytree = 0.6 # number of columns that get subsampled
                          )
 
 # Will save the results we've gotten so far even if it didn't finish running
-hitter_xgb <- caret::train(Salary~., data=hitters[train,], method="xgbTree",trControl=train_control,tuneGrid=tune_grid)
+hitter_xgb <- caret::train(Salary~., data=hitters[train,], method="xgbTree",trControl=train_control,tuneGrid=tune_grid, verbosity=0)
 
 plot(varImp(hitter_xgb,scale=F))
 
-yhat_xgb <- predict(hitter_xgb, newdata=hitters[train,])
-
-# Automatically calculates RMSE
-caret::RMSE(hitters[train,"Salary"], yhat_xgb)^2
 ```
+For XGBoost, we again see `CRuns`, `CRBI`, and `CHits` reappear. Although `HmRun` is not among the top 5 here, `CHmRun` is, indicating the importance of home runs in predicting the player's salary. It is interesting to note that `Walks` and even `CWalks` are not considered very important in XGBoost. 
 
+The set of parameters that XGBoost has chosen for the final model after tuning are:
+
+- `nrounds` = 50
+- `max_depth` = 3
+- `eta` = 0.3
+
+```{r, eval=FALSE}
+hitter_xgb$finalModel
+```
 
 ## Step 6: Compare Performance
-```{r}
 
+So which model is the best? To determine that, we shall calculate and compare the test MSE for each method.
+
+```{r}
+# Regression tree
+tree_pred <- predict(hitter_tree_prune, hitters[test,])
+tree_mse <- sum((tree_pred - hitters[test,"Salary"])^2)/dim(hitters[test,])[1]
+
+# Bagging
+bag_pred <- predict(hitter_bag, hitters[test,])
+bag_mse <- sum((bag_pred - hitters[test,"Salary"])^2)/dim(hitters[test,])[1]
+
+# Random Forest
+rf_pred <- predict(hitter_rf, hitters[test,])
+rf_mse <- sum((rf_pred - hitters[test,"Salary"])^2)/dim(hitters[test,])[1]
+
+# Boosting
+yhat_boost <- predict(hitter_boost, newdata = hitters[test,], n.trees=1000)
+boost_mse <- mean((yhat_boost-hitters[test,"Salary"])^2)
+
+# XGBoost
+yhat_xgb <- predict(hitter_xgb, newdata=hitters[test,])
+# Automatically calculates RMSE
+xgb_mse <- caret::RMSE(hitters[test,"Salary"], yhat_xgb)^2
 ```
+
+```{r}
+tibble("Model" = c("Regression Tree", "Bagging", "Random Forest", "Boosting", "XGBoost"),
+       "MSE" = c(tree_mse, bag_mse, rf_mse, boost_mse, xgb_mse)
+       ) %>%
+  knitr::kable(caption = "Test set MSE of different models on the hitters dataset")
+```
+
+# Conclusion
+
+From the above data, we discover that random forest yielded the lowest MSE on the test set, which could suggest that it is the best model with regards to this metric. In terms of predicting player salary, we also have some general insights from calculating variable importance for all the models: 
+
+- `CRBI`, the number of runs batted in during their career, is always in the top 2 significant features for all the models.
+- `CRuns` and `CHits` are important (in the top 5) in all models except boosting.
+- `Walks` is important in all models except XGBoost. 
+
+The several common variables in the top 5 can possibly give more certainty about their ability to predict the player's salary. As such, we saw that often, the player's salary is associated with some of their actions on the field, such as runs, walks, hits, and runs batted whether in a particular game or during their entire career. However, their number of errors or assists did not seem to matter as much. Lastly, we did not see the player's league or division category playing a huge role, suggesting that perhaps those are not indicative of their corresponding salary. 
 
 
 
