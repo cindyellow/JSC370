@@ -104,7 +104,7 @@ sim_pi <- function(n=1000, i=NULL){
 # set.seed(156)
 # sim_pi(1000)
 ```
-First, we try using `lapply` to simulate PI 4,000 times, each with 10,000 points. The resulting value and runtime are: 
+First, we try using `lapply` to simulate PI 4,000 times, each with 10,000 points. The resulting simulated value is: 
 ```{r}
 set.seed(1231)
 time1 <- system.time({
@@ -126,11 +126,11 @@ time2 <- system.time({
 })
 ```
 
-By using parallel computing, we have reduced runtime by `r round(100*(time1['elapsed'] - time2['elapsed'])/time1['elapsed'],3)`%. 
+By using parallel computing, we have reduced runtime by `r round(100*(time1['elapsed'] - time2['elapsed'])/time1['elapsed'],3)`% from `r time1['elapsed']` to `r time2['elapsed']`.
 
 # ML
 
-In the following steps, we will be examining the `hitters` dataset, which details information for 332 major league baseball players. We will compare the models' performance for predicting players' salaries based on provided features. NA observations are ommitted because we won't be able to calculate MSEs otherwise.
+In the following steps, we will be examining the `hitters` dataset, which details information for 332 major league baseball players. We will compare the models' performance for predicting players' salaries based on provided features. NA observations are omitted because we won't be able to calculate MSEs otherwise.
 
 After separating the dataset into 70% training and 30% test set, we proceed with fitting different models.
 ```{r}
@@ -151,7 +151,7 @@ test = setdiff(1:nrow(hitters), train)
 
 ## Step 1: Regression Tree
 
-First, we fit a regression tree with the response variable `Salary` using the ANOVA method. The tree below shows the predicted value for eacch node as well as the percentage of the observations in the node. 
+First, we fit a regression tree with the response variable `Salary` using the ANOVA method. The tree below shows the predicted value for each node as well as the percentage of the observations in the node. 
 
 ```{r}
 set.seed(10)
@@ -246,7 +246,7 @@ hitter_boost = gbm(Salary~., data = hitters[train,], distribution="gaussian", n.
 summary(hitter_boost)
 ```
 
-The method used here is relative influence, which is likely the average reduction of a given metric (ex. MSE) across the base learners (trees) for each variable respectively. From the table, we notice that `CRBI` and `Walks` are again among the most significant predictors. However, GBM's other choices differ, as `PutOuts`,  `AtBat`, and `HmRun` have appeared in the top 5 for the first time. They represent the following:
+The method used here is relative influence, which is likely the average reduction of a given metric (ex. MSE) across the base learners (trees) by each variable respectively. From the table, we notice that `CRBI` and `Walks` are again among the most significant predictors. However, GBM's other choices differ, as `PutOuts`,  `AtBat`, and `HmRun` have appeared in the top 5 for the first time. They represent the following:
 
 - `PutOuts`: Number of put outs in 1986
 - `AtBat`: Number of times at bat in 1986
@@ -276,7 +276,7 @@ hitter_xgb <- caret::train(Salary~., data=hitters[train,], method="xgbTree",trCo
 plot(varImp(hitter_xgb,scale=F))
 
 ```
-For XGBoost, we again see `CRuns`, `CRBI`, and `CHits` reappear. Although `HmRun` is not among the top 5 here, `CHmRun` is, indicating the importance of home runs in predicting the player's salary. It is interesting to note that `Walks` and even `CWalks` are not considered very important in XGBoost. 
+For XGBoost, we again see `CRuns`, `CRBI`, and `CHits` reappear. Although `HmRun` is not among the top 5 here, `CHmRun` is, indicating the importance of home runs in predicting the player's salary. It is interesting to note that `Walks` and even `CWalks` are not considered very important in XGBoost whereas in other models they are.
 
 The set of parameters that XGBoost has chosen for the final model after tuning are:
 
